@@ -36,6 +36,8 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
 
     manager=$(jq -r '.manager' "$json_file")
     current_version=$(jq -r '.current_version // empty' "$json_file")
+    remote_length=""
+    remote_modified=""
 
     case "$manager" in
         github)
@@ -70,7 +72,19 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
             ;;
         static)
             url=$(jq -r '.url' "$json_file")
-            latest_tag="static"
+            stored_length=$(jq -r '.content_length // empty' "$json_file")
+            stored_modified=$(jq -r '.last_modified // empty' "$json_file")
+
+            headers=$(curl -sIL "$url")
+            remote_length=$(echo "$headers" | grep -i "content-length" | tail -n 1 | tr -d '\r' | awk '{print $2}')
+            remote_modified=$(echo "$headers" | grep -i "last-modified" | tail -n 1 | cut -d' ' -f2- | tr -d '\r')
+
+            if [[ -n "$remote_length" && "$remote_length" == "$stored_length" && "$remote_modified" == "$stored_modified" ]]; then
+                echo "✓ $app_name is up to date (unchanged)"
+                continue
+            fi
+
+            latest_tag="static-$remote_length"
             asset_url="$url"
             asset_name=$(basename "$url")
             ;;
@@ -110,7 +124,6 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
                 continue
             fi
 
-            # Find the AppImage inside the extracted contents (search subdirs too)
             extracted_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f | head -n 1)
 
             if [[ -z "$extracted_appimage" ]]; then
@@ -134,9 +147,15 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
             ;;
     esac
 
-    # Update stored version
+    # Update stored version/metadata
     tmp_json=$(mktemp)
-    jq --arg v "$latest_tag" '.current_version = $v' "$json_file" > "$tmp_json" && mv "$tmp_json" "$json_file"
+    if [[ "$manager" == "static" ]]; then
+        jq --arg v "$latest_tag" --arg len "$remote_length" --arg mod "$remote_modified" \
+            '.current_version = $v | .content_length = $len | .last_modified = $mod' \
+            "$json_file" > "$tmp_json" && mv "$tmp_json" "$json_file"
+    else
+        jq --arg v "$latest_tag" '.current_version = $v' "$json_file" > "$tmp_json" && mv "$tmp_json" "$json_file"
+    fi
 
     echo "  ✓ $app_name updated to $latest_tag"
 done
