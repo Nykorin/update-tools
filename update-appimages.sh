@@ -4,6 +4,19 @@ set -uo pipefail
 
 APPIMAGES_DIR="$HOME/AppImages"
 
+extract_archive() {
+    local archive="$1" dest_dir="$2"
+
+    case "$archive" in
+        *.tar.gz|*.tgz)   tar -xzf "$archive" -C "$dest_dir" ;;
+        *.tar.xz)         tar -xJf "$archive" -C "$dest_dir" ;;
+        *.tar.bz2)        tar -xjf "$archive" -C "$dest_dir" ;;
+        *.tar)            tar -xf "$archive" -C "$dest_dir" ;;
+        *.zip)            unzip -q -o "$archive" -d "$dest_dir" ;;
+        *)                return 1 ;;
+    esac
+}
+
 for app_dir in "$APPIMAGES_DIR"/*/; do
     [[ -d "$app_dir" ]] || continue
     app_name=$(basename "$app_dir")
@@ -39,6 +52,7 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
                 (if type=="array" then .[0] else . end).assets[]
                 | select(.name | test($pat | gsub("\\*"; ".*")))
                 | .browser_download_url' | head -n 1)
+            asset_name=$(basename "$asset_url")
             ;;
         gitlab)
             repo_url=$(jq -r '.repo_url' "$json_file")
@@ -52,11 +66,13 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
                 .[0].assets.links[]
                 | select(.name | test($pat | gsub("\\*"; ".*")))
                 | .direct_asset_url' | head -n 1)
+            asset_name=$(basename "$asset_url")
             ;;
         static)
             url=$(jq -r '.url' "$json_file")
             latest_tag="static"
             asset_url="$url"
+            asset_name=$(basename "$url")
             ;;
         *)
             echo "⚠ $app_name: unknown manager '$manager', skipping"
@@ -75,19 +91,52 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
     fi
 
     echo "⬆ Updating $app_name..."
-    tmp_file="${appimage_file}.new"
-    if curl -sL "$asset_url" -o "$tmp_file"; then
-        mv "$appimage_file" "${appimage_file}.bak"
-        mv "$tmp_file" "$appimage_file"
-        chmod +x "$appimage_file"
+    tmp_download="$(mktemp --suffix="-$asset_name")"
 
-        # Update stored version
-        tmp_json=$(mktemp)
-        jq --arg v "$latest_tag" '.current_version = $v' "$json_file" > "$tmp_json" && mv "$tmp_json" "$json_file"
-
-        echo "  ✓ $app_name updated to $latest_tag"
-    else
+    if ! curl -L --progress-bar "$asset_url" -o "$tmp_download"; then
         echo "  ✗ Failed to download update for $app_name"
-        rm -f "$tmp_file"
+        rm -f "$tmp_download"
+        continue
     fi
+
+    # Determine if downloaded file is an archive or a direct AppImage
+    case "$asset_name" in
+        *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
+            tmp_extract_dir=$(mktemp -d)
+            if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
+                echo "  ✗ Failed to extract archive for $app_name"
+                rm -f "$tmp_download"
+                rm -rf "$tmp_extract_dir"
+                continue
+            fi
+
+            # Find the AppImage inside the extracted contents (search subdirs too)
+            extracted_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f | head -n 1)
+
+            if [[ -z "$extracted_appimage" ]]; then
+                echo "  ✗ No AppImage found inside extracted archive for $app_name"
+                rm -f "$tmp_download"
+                rm -rf "$tmp_extract_dir"
+                continue
+            fi
+
+            mv "$appimage_file" "${appimage_file}.bak"
+            mv "$extracted_appimage" "$appimage_file"
+            chmod +x "$appimage_file"
+
+            rm -f "$tmp_download"
+            rm -rf "$tmp_extract_dir"
+            ;;
+        *)
+            mv "$appimage_file" "${appimage_file}.bak"
+            mv "$tmp_download" "$appimage_file"
+            chmod +x "$appimage_file"
+            ;;
+    esac
+
+    # Update stored version
+    tmp_json=$(mktemp)
+    jq --arg v "$latest_tag" '.current_version = $v' "$json_file" > "$tmp_json" && mv "$tmp_json" "$json_file"
+
+    echo "  ✓ $app_name updated to $latest_tag"
 done
