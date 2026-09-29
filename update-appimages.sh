@@ -17,16 +17,18 @@ extract_archive() {
     esac
 }
 
+ICONS_DIR="$APPIMAGES_DIR/.icons"
+
 icon_exists() {
     local dir="$1" name="$2"
     find -L "$dir" -maxdepth 1 \( -iname "${name}.png" -o -iname "${name}.svg" -o -iname "${name}.xpm" -o -iname "${name}.ico" \) 2>/dev/null | head -n 1
 }
 
 generate_desktop_entry() {
-    local app_dir="$1" app_name="$2" appimage_file="$3"
-    local wrapper_script="$app_dir${app_name}.appimage.sh"
+    local app_name="$1" appimage_file="$2"
 
-    local icon_dest="$app_dir/$app_name"
+    mkdir -p "$ICONS_DIR"
+    local icon_dest="$ICONS_DIR/$app_name"
     local desktop_dest="$HOME/.local/share/applications/${app_name}.desktop"
 
     local tmp_extract
@@ -46,7 +48,7 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" | head -n 1)
 
     # Extract icon if not already present — prefer root-level icons first
-    if [[ -z "$(icon_exists "$app_dir" "$app_name")" ]]; then
+    if [[ -z "$(icon_exists "$ICONS_DIR" "$app_name")" ]]; then
         local icon_src
         icon_src=$(find "$squashfs_root" -maxdepth 1 \( -iname "*.png" -o -iname "*.svg" \) | head -n 1)
 
@@ -69,13 +71,13 @@ generate_desktop_entry() {
     fi
 
     local icon_path
-    icon_path=$(icon_exists "$app_dir" "$app_name")
+    icon_path=$(icon_exists "$ICONS_DIR" "$app_name")
 
     if [[ -n "$embedded_desktop" ]]; then
         sed \
             -e "s|^Icon=.*|Icon=${icon_path:-}|" \
-            -e "s|^TryExec=.*|TryExec=$wrapper_script|" \
-            -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $wrapper_script %f|" \
+            -e "s|^TryExec=.*|TryExec=$appimage_file|" \
+            -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $appimage_file %f|" \
             "$embedded_desktop" > "$desktop_dest"
 
         echo "  ✓ Desktop entry built from embedded metadata for $app_name"
@@ -86,7 +88,7 @@ Type=Application
 Name=$app_name
 Icon=${icon_path:-}
 TryExec=$appimage_file
-Exec=env DESKTOPINTEGRATION=1 $wrapper_script
+Exec=env DESKTOPINTEGRATION=1 $appimage_file %f
 Categories=Utility;
 X-AppImage-Name=$app_name
 EOF
@@ -96,20 +98,15 @@ EOF
     rm -rf "$tmp_extract"
 }
 
-for app_dir in "$APPIMAGES_DIR"/*/; do
-    [[ -d "$app_dir" ]] || continue
-    app_name=$(basename "$app_dir")
+for json_file in "$APPIMAGES_DIR"/*.appimage.json; do
+    [[ -f "$json_file" ]] || continue
+    app_name=$(basename "$json_file")
+    app_name="${app_name%.appimage.json}"
 
-    appimage_file=$(find "$app_dir" -maxdepth 1 -iname "*.appimage" -type f | head -n 1)
-    json_file=$(find "$app_dir" -maxdepth 1 -iname "*.appimage.json" -type f | head -n 1)
+    appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f | head -n 1)
 
     if [[ -z "$appimage_file" ]]; then
         echo "⚠ $app_name: no AppImage found, skipping"
-        continue
-    fi
-
-    if [[ -z "$json_file" ]]; then
-        echo "⚠ $app_name: no update metadata found, skipping"
         continue
     fi
 
@@ -186,7 +183,7 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
 
             if [[ -n "$remote_length" && "$remote_length" == "$stored_length" && "$remote_modified" == "$stored_modified" ]]; then
                 echo "✓ $app_name is up to date (unchanged)"
-                generate_desktop_entry "$app_dir" "$app_name" "$appimage_file"
+                generate_desktop_entry "$app_name" "$appimage_file"
                 continue
             fi
 
@@ -202,7 +199,7 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
 
     if [[ "$manager" != "static" && "$latest_tag" == "$current_version" ]]; then
         echo "✓ $app_name is up to date ($current_version)"
-        generate_desktop_entry "$app_dir" "$app_name" "$appimage_file"
+        generate_desktop_entry "$app_name" "$appimage_file"
         continue
     fi
 
@@ -254,7 +251,7 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
             ;;
     esac
 
-    generate_desktop_entry "$app_dir" "$app_name" "$appimage_file"
+    generate_desktop_entry "$app_name" "$appimage_file"
 
     # Update stored version/metadata
     tmp_json=$(mktemp)
