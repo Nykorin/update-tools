@@ -17,14 +17,99 @@ extract_archive() {
     esac
 }
 
+SHARED_HOME="$APPIMAGES_DIR/.shared-home"
+
+# Paths (relative to a source dir) to mirror into $SHARED_HOME from the
+# real $HOME, once per run — theming files and any other config a spawned
+# process creates that's fine to share across every portable app (Konsole,
+# Dolphin, etc.). Add to these as you notice more; nothing else needs to
+# change. SYMLINK_FILES are individual files, SYMLINK_DIRS are whole
+# directories — kept as two arrays just for readability, since
+# symlink_paths() below treats both the same way.
+SYMLINK_FILES=(
+    .config/dolphinrc
+    .config/kdeglobals         # Plasma color scheme, font, icon theme name
+    .config/konsolerc
+    .config/konsolesshconfig
+    .config/mimeapps.list
+    .config/QtProject.conf
+    .gtkrc-2.0                 # GTK 2.0 apps read this file directly
+    .local/share/recently-used.xbel
+    .local/share/user-places.xbel
+    .local/share/user-places.xbel.bak
+    .local/share/user-places.xbel.tbcache
+)
+
+SYMLINK_DIRS=(
+    .config/glib-2.0
+    .config/gtk-2.0
+    .config/gtk-3.0
+    .config/gtk-3.0
+    .config/gtk-4.0            # also covers libadwaita apps
+    .config/Kvantum            # SVG-based Qt theme engine
+    .config/pulse
+    .config/qt5ct
+    .config/qt6ct              # Qt platform-theme picker
+    .icons
+    .local/share/applications
+    .local/share/baloo
+    .local/share/color-schemes # referenced by kdeglobals; per-app selectable
+    .local/share/dolphin
+    .local/share/gegl-0.4
+    .local/share/gvfs-metadata
+    .local/share/icons
+    .local/share/icons         # some installers use these XDG dirs instead
+    .local/share/konsole
+    .local/share/pki
+    .local/share/Steam
+    .local/share/themes        # of ~/.icons / ~/.themes (e.g. Orchis-theme)
+    .local/share/Trash
+    .pki
+    .themes
+    .var
+    .nv
+    .net
+    .triton
+)
+
+# Symlinks each tracked path from $src into $dest, skipping any that don't
+# exist under $src. -e covers files and dirs alike, and -sfn is safe for
+# both (so there's no need for separate file/dir handling here) — used
+# both to build $SHARED_HOME from the real $HOME, and to link an app's own
+# portable home to $SHARED_HOME.
+symlink_paths() {
+    local src="$1" dest="$2"
+    local path
+
+    for path in "${SYMLINK_FILES[@]}" "${SYMLINK_DIRS[@]}"; do
+        if [[ -e "$src/$path" ]]; then
+            mkdir -p "$dest/$(dirname -- "$path")"
+            ln -sfn "$src/$path" "$dest/$path"
+        fi
+    done
+}
+
+# Refreshes $SHARED_HOME from the real $HOME. Called once per script run,
+# not per app — every portable app's own home then links to this one
+# place rather than scanning the real $HOME itself.
+build_shared_home() {
+    symlink_paths "$HOME" "$SHARED_HOME"
+}
+
 icon_exists() {
     local dir="$1" name="$2"
     find -L "$dir" -maxdepth 1 \( -iname "${name}.png" -o -iname "${name}.svg" -o -iname "${name}.xpm" -o -iname "${name}.ico" \) 2>/dev/null | head -n 1
 }
 
 generate_desktop_entry() {
-    local app_dir="$1" app_name="$2" appimage_file="$3"
-    local wrapper_script="$app_dir${app_name}.appimage.sh"
+    local app_name="$1" appimage_file="$2" app_dir="$3" app_home="${4:-}"
+
+    # Apps with a portable home get HOME= pinned to it right in the
+    # launch command — no wrapper script needed. Apps without one (the
+    # default, flat case) launch exactly as before.
+    local exec_cmd="env DESKTOPINTEGRATION=1"
+    [[ -n "$app_home" ]] && exec_cmd+=" HOME=$app_home"
+    exec_cmd+=" $appimage_file"
 
     local icon_dest="$app_dir/$app_name"
     local desktop_dest="$HOME/.local/share/applications/${app_name}.desktop"
@@ -74,8 +159,8 @@ generate_desktop_entry() {
     if [[ -n "$embedded_desktop" ]]; then
         sed \
             -e "s|^Icon=.*|Icon=${icon_path:-}|" \
-            -e "s|^TryExec=.*|TryExec=$wrapper_script|" \
-            -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $wrapper_script %f|" \
+            -e "s|^TryExec=.*|TryExec=$appimage_file|" \
+            -e "s|^Exec=.*|Exec=$exec_cmd %f|" \
             "$embedded_desktop" > "$desktop_dest"
 
         echo "  ✓ Desktop entry built from embedded metadata for $app_name"
@@ -86,7 +171,7 @@ Type=Application
 Name=$app_name
 Icon=${icon_path:-}
 TryExec=$appimage_file
-Exec=env DESKTOPINTEGRATION=1 $wrapper_script
+Exec=$exec_cmd %f
 Categories=Utility;
 X-AppImage-Name=$app_name
 EOF
@@ -96,12 +181,21 @@ EOF
     rm -rf "$tmp_extract"
 }
 
+# Refresh the shared theme/config dir once per run, up front — every
+# opted-in app's portable home links to this single copy below, rather
+# than each one re-scanning the real $HOME individually.
+build_shared_home
+
 for app_dir in "$APPIMAGES_DIR"/*/; do
     [[ -d "$app_dir" ]] || continue
     app_name=$(basename "$app_dir")
+    # .shared-home never matches this glob (bash doesn't expand * over
+    # dot-dirs by default), but skip it explicitly in case dotglob is set
+    # in the calling shell.
+    [[ "$app_name" == ".shared-home" ]] && continue
 
-    appimage_file=$(find "$app_dir" -maxdepth 1 -iname "*.appimage" -type f | head -n 1)
-    json_file=$(find "$app_dir" -maxdepth 1 -iname "*.appimage.json" -type f | head -n 1)
+    appimage_file=$(find "$app_dir" -maxdepth 1 -iname "${app_name}.appimage" -type f | head -n 1)
+    json_file=$(find "$app_dir" -maxdepth 1 -iname "${app_name}.appimage.json" -type f | head -n 1)
 
     if [[ -z "$appimage_file" ]]; then
         echo "⚠ $app_name: no AppImage found, skipping"
@@ -111,6 +205,17 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
     if [[ -z "$json_file" ]]; then
         echo "⚠ $app_name: no update metadata found, skipping"
         continue
+    fi
+
+    # Opt-in portable home: an app only gets one if its own
+    # AppName.appimage.home/ already exists — create it once by hand to
+    # opt an app in, and this just keeps it refreshed against $SHARED_HOME
+    # from then on. No folder there means it stays flat, against the real
+    # $HOME, exactly as before.
+    app_home=""
+    if [[ -d "${app_dir}${app_name}.appimage.home" ]]; then
+        app_home="${app_dir}${app_name}.appimage.home"
+        symlink_paths "$SHARED_HOME" "$app_home"
     fi
 
     manager=$(jq -r '.manager' "$json_file")
@@ -186,7 +291,7 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
 
             if [[ -n "$remote_length" && "$remote_length" == "$stored_length" && "$remote_modified" == "$stored_modified" ]]; then
                 echo "✓ $app_name is up to date (unchanged)"
-                generate_desktop_entry "$app_dir" "$app_name" "$appimage_file"
+                generate_desktop_entry "$app_name" "$appimage_file" "$app_dir" "$app_home"
                 continue
             fi
 
@@ -202,7 +307,7 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
 
     if [[ "$manager" != "static" && "$latest_tag" == "$current_version" ]]; then
         echo "✓ $app_name is up to date ($current_version)"
-        generate_desktop_entry "$app_dir" "$app_name" "$appimage_file"
+        generate_desktop_entry "$app_name" "$appimage_file" "$app_dir" "$app_home"
         continue
     fi
 
@@ -254,7 +359,7 @@ for app_dir in "$APPIMAGES_DIR"/*/; do
             ;;
     esac
 
-    generate_desktop_entry "$app_dir" "$app_name" "$appimage_file"
+    generate_desktop_entry "$app_name" "$appimage_file" "$app_dir" "$app_home"
 
     # Update stored version/metadata
     tmp_json=$(mktemp)
