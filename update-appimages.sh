@@ -18,10 +18,30 @@ extract_archive() {
 }
 
 ICONS_DIR="$APPIMAGES_DIR/.icons"
+JSON_DIR="$APPIMAGES_DIR/.json"
+OLD_DIR="$APPIMAGES_DIR/.old"
+
+backup_appimage() {
+    local appimage_file="$1"
+    mkdir -p "$OLD_DIR"
+    mv "$appimage_file" "$OLD_DIR/$(basename -- "$appimage_file")"
+}
 
 icon_exists() {
     local dir="$1" name="$2"
     find -L "$dir" -maxdepth 1 \( -iname "${name}.png" -o -iname "${name}.svg" -o -iname "${name}.xpm" -o -iname "${name}.ico" \) 2>/dev/null | head -n 1
+}
+
+# Searches one icon tier: $dir, down to $maxdepth levels (empty = no
+# limit). -L follows symlinks throughout, since an AppImage's extracted
+# squashfs-root is sometimes itself a symlink to AppDir. Sorted
+# descending so the pick is deterministic rather than filesystem-order.
+find_icon() {
+    local dir="$1" maxdepth="$2"
+    local -a find_args=(-L "$dir")
+    [[ -n "$maxdepth" ]] && find_args+=(-maxdepth "$maxdepth")
+    find_args+=(\( -iname "*.png" -o -iname "*.svg" \))
+    find "${find_args[@]}" 2>/dev/null | sort -r | head -n 1
 }
 
 generate_desktop_entry() {
@@ -47,20 +67,23 @@ generate_desktop_entry() {
     embedded_desktop=$(find -L "$squashfs_root" -maxdepth 1 -iname "*.desktop" | head -n 1)
     [[ -z "$embedded_desktop" ]] && embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" | head -n 1)
 
-    # Extract icon if not already present — prefer root-level icons first
+    # Extract icon if not already present. Tiers in priority order: root
+    # level only, the standard icon-theme location, then anywhere in the
+    # AppImage as a last resort — each "dir:maxdepth" (empty maxdepth
+    # means unlimited depth), stopping at the first hit.
     if [[ -z "$(icon_exists "$ICONS_DIR" "$app_name")" ]]; then
-        local icon_src
-        icon_src=$(find "$squashfs_root" -maxdepth 1 \( -iname "*.png" -o -iname "*.svg" \) | head -n 1)
-
-        # Fall back to standard icon theme location
-        if [[ -z "$icon_src" ]]; then
-            icon_src=$(find -L "$squashfs_root/usr/share/icons" \( -iname "*.png" -o -iname "*.svg" \) 2>/dev/null | sort -r | head -n 1)
-        fi
-
-        # Last resort: search everywhere
-        if [[ -z "$icon_src" ]]; then
-            icon_src=$(find -L "$squashfs_root" \( -iname "*.png" -o -iname "*.svg" \) | head -n 1)
-        fi
+        local -a icon_tiers=(
+            "$squashfs_root:1"
+            "$squashfs_root/usr/share/icons:"
+            "$squashfs_root:"
+        )
+        local icon_src="" tier dir maxdepth
+        for tier in "${icon_tiers[@]}"; do
+            dir="${tier%%:*}"
+            maxdepth="${tier#*:}"
+            icon_src=$(find_icon "$dir" "$maxdepth")
+            [[ -n "$icon_src" ]] && break
+        done
 
         if [[ -n "$icon_src" ]]; then
             cp "$icon_src" "${icon_dest}.${icon_src##*.}"
@@ -98,7 +121,7 @@ EOF
     rm -rf "$tmp_extract"
 }
 
-for json_file in "$APPIMAGES_DIR"/*.appimage.json; do
+for json_file in "$JSON_DIR"/*.appimage.json; do
     [[ -f "$json_file" ]] || continue
     app_name=$(basename "$json_file")
     app_name="${app_name%.appimage.json}"
@@ -110,55 +133,57 @@ for json_file in "$APPIMAGES_DIR"/*.appimage.json; do
         continue
     fi
 
-    manager=$(jq -r '.manager' "$json_file")
-    current_version=$(jq -r '.current_version // empty' "$json_file")
+    json_field() { jq -r "$1" "$json_file"; }
+
+    manager=$(json_field '.manager')
+    current_version=$(json_field '.current_version // empty')
     remote_length=""
     remote_modified=""
 
     case "$manager" in
         github)
-            repo=$(jq -r '.repo' "$json_file")
-            pattern=$(jq -r '.repo_filename' "$json_file")
-            allow_pre=$(jq -r '.allow_prereleases // false' "$json_file")
+            repo=$(json_field '.repo')
+            pattern=$(json_field '.repo_filename')
+            allow_pre=$(json_field '.allow_prereleases // false')
 
             api_url="https://api.github.com/repos/$repo/releases"
             [[ "$allow_pre" == "false" ]] && api_url="$api_url/latest"
 
             release_json=$(curl -s "$api_url")
             #echo "DEBUG ($app_name): $release_json" >&2
-            latest_tag=$(echo "$release_json" | jq -r 'if type=="array" then .[0].tag_name else .tag_name end')
-            asset_url=$(echo "$release_json" | jq -r --arg pat "$pattern" '
+            latest_tag=$(jq -r 'if type=="array" then .[0].tag_name else .tag_name end' <<<"$release_json")
+            asset_url=$(jq -r --arg pat "$pattern" '
                 (if type=="array" then .[0] else . end).assets[]
                 | select(.name | test($pat | gsub("\\*"; ".*")))
-                | .browser_download_url' | head -n 1)
+                | .browser_download_url' <<<"$release_json" | head -n 1)
             asset_name=$(basename "$asset_url")
             ;;
         gitlab)
-            repo_url=$(jq -r '.repo_url' "$json_file")
-            pattern=$(jq -r '.repo_filename' "$json_file")
-            project_path=$(echo "$repo_url" | sed -E 's#https://gitlab.com/##')
+            repo_url=$(json_field '.repo_url')
+            pattern=$(json_field '.repo_filename')
+            project_path="${repo_url#https://gitlab.com/}"
             encoded_path=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$project_path")
 
             release_json=$(curl -s "https://gitlab.com/api/v4/projects/$encoded_path/releases")
-            latest_tag=$(echo "$release_json" | jq -r '.[0].tag_name')
-            asset_url=$(echo "$release_json" | jq -r --arg pat "$pattern" '
+            latest_tag=$(jq -r '.[0].tag_name' <<<"$release_json")
+            asset_url=$(jq -r --arg pat "$pattern" '
                 .[0].assets.links[]
                 | select(.name | test($pat | gsub("\\*"; ".*")))
-                | .direct_asset_url' | head -n 1)
+                | .direct_asset_url' <<<"$release_json" | head -n 1)
             asset_name=$(basename "$asset_url")
             ;;
         jsonfeed)
-            feed_url=$(jq -r '.feed_url' "$json_file")
-            channel=$(jq -r '.channel' "$json_file")
-            arch_key=$(jq -r '.arch_key' "$json_file")
-            download_base=$(jq -r '.download_base' "$json_file")
+            feed_url=$(json_field '.feed_url')
+            channel=$(json_field '.channel')
+            arch_key=$(json_field '.arch_key')
+            download_base=$(json_field '.download_base')
 
             feed_json=$(curl -s "$feed_url")
 
-            latest_tag=$(echo "$feed_json" | jq -r --arg ch "$channel" '.[$ch][0].version')
+            latest_tag=$(jq -r --arg ch "$channel" '.[$ch][0].version' <<<"$feed_json")
 
-            asset_name=$(echo "$feed_json" | jq -r --arg ch "$channel" --arg arch "$arch_key" \
-                '.[$ch][0].appimage[] | select(.["build-id"] | test($arch)) | .filename')
+            asset_name=$(jq -r --arg ch "$channel" --arg arch "$arch_key" \
+                '.[$ch][0].appimage[] | select(.["build-id"] | test($arch)) | .filename' <<<"$feed_json")
 
             if [[ -z "$asset_name" || "$asset_name" == "null" ]]; then
                 echo "⚠ $app_name: could not find AppImage asset for arch $arch_key"
@@ -166,20 +191,21 @@ for json_file in "$APPIMAGES_DIR"/*.appimage.json; do
             fi
 
             # Derive the minor version (e.g. 3.2.4 -> 3.2) for the download path template
-            minor_version=$(echo "$latest_tag" | grep -oE '^[0-9]+\.[0-9]+')
+            [[ "$latest_tag" =~ ^([0-9]+\.[0-9]+) ]]
+            minor_version="${BASH_REMATCH[1]}"
 
-            asset_url=$(echo "$download_base" | sed \
+            asset_url=$(sed \
                 -e "s|{minor_version}|$minor_version|" \
-                -e "s|{filename}|$asset_name|")
+                -e "s|{filename}|$asset_name|" <<<"$download_base")
             ;;
         static)
-            url=$(jq -r '.url' "$json_file")
-            stored_length=$(jq -r '.content_length // empty' "$json_file")
-            stored_modified=$(jq -r '.last_modified // empty' "$json_file")
+            url=$(json_field '.url')
+            stored_length=$(json_field '.content_length // empty')
+            stored_modified=$(json_field '.last_modified // empty')
 
             headers=$(curl -sIL "$url")
-            remote_length=$(echo "$headers" | grep -i "content-length" | tail -n 1 | tr -d '\r' | awk '{print $2}')
-            remote_modified=$(echo "$headers" | grep -i "last-modified" | tail -n 1 | cut -d' ' -f2- | tr -d '\r')
+            remote_length=$(grep -i "content-length" <<<"$headers" | tail -n 1 | tr -d '\r' | awk '{print $2}')
+            remote_modified=$(grep -i "last-modified" <<<"$headers" | tail -n 1 | cut -d' ' -f2- | tr -d '\r')
 
             if [[ -n "$remote_length" && "$remote_length" == "$stored_length" && "$remote_modified" == "$stored_modified" ]]; then
                 echo "✓ $app_name is up to date (unchanged)"
@@ -188,8 +214,16 @@ for json_file in "$APPIMAGES_DIR"/*.appimage.json; do
             fi
 
             latest_tag="static-$remote_length"
-            asset_url="$url"
-            asset_name=$(basename "$url")
+
+            # $url can be a redirect landing page with no real filename in
+            # its own path (e.g. mudlet.org/download/74/ redirects to
+            # .../Mudlet-5.0.1-linux-x64.AppImage.tar) — basename of $url
+            # itself would just be "74", so extract_archive's extension
+            # match below would never fire. Resolve where it actually
+            # lands first and use that for both the download and the name.
+            asset_url=$(curl -sIL -o /dev/null -w '%{url_effective}' "$url")
+            [[ -z "$asset_url" ]] && asset_url="$url"
+            asset_name=$(basename "$asset_url")
             ;;
         *)
             echo "⚠ $app_name: unknown manager '$manager', skipping"
@@ -217,7 +251,11 @@ for json_file in "$APPIMAGES_DIR"/*.appimage.json; do
         continue
     fi
 
-    # Determine if downloaded file is an archive or a direct AppImage
+    # Determine if downloaded file is an archive or a direct AppImage.
+    # new_appimage defaults to the raw download; the archive case swaps it
+    # for the extracted .AppImage before the shared install step below.
+    tmp_extract_dir=""
+    new_appimage="$tmp_download"
     case "$asset_name" in
         *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
             tmp_extract_dir=$(mktemp -d)
@@ -228,28 +266,22 @@ for json_file in "$APPIMAGES_DIR"/*.appimage.json; do
                 continue
             fi
 
-            extracted_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f | head -n 1)
+            new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f | head -n 1)
 
-            if [[ -z "$extracted_appimage" ]]; then
+            if [[ -z "$new_appimage" ]]; then
                 echo "  ✗ No AppImage found inside extracted archive for $app_name"
                 rm -f "$tmp_download"
                 rm -rf "$tmp_extract_dir"
                 continue
             fi
-
-            mv "$appimage_file" "${appimage_file}.bak"
-            mv "$extracted_appimage" "$appimage_file"
-            chmod +x "$appimage_file"
-
-            rm -f "$tmp_download"
-            rm -rf "$tmp_extract_dir"
-            ;;
-        *)
-            mv "$appimage_file" "${appimage_file}.bak"
-            mv "$tmp_download" "$appimage_file"
-            chmod +x "$appimage_file"
             ;;
     esac
+
+    backup_appimage "$appimage_file"
+    mv "$new_appimage" "$appimage_file"
+    chmod +x "$appimage_file"
+    rm -f "$tmp_download"
+    [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
 
     generate_desktop_entry "$app_name" "$appimage_file"
 
