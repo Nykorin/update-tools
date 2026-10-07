@@ -140,7 +140,7 @@ EOF
 update_cfg() {
     local cfg_file="$1"
     shift
-    local key value
+    local pair key value escaped
     for pair in "$@"; do
         key="${pair%%=*}"
         value="${pair#*=}"
@@ -151,11 +151,49 @@ update_cfg() {
         fi
 
         if grep -q "^${key}=" "$cfg_file"; then
-            sed -i "s|^${key}=.*|${key}=${value}|" "$cfg_file"
+            # sed's replacement text treats \, &, and the | delimiter
+            # specially (e.g. an unescaped & is replaced with the whole
+            # matched text) — escape them so the value lands literally.
+            # Backslash first, so it doesn't double-escape what follows.
+            escaped="${value//\\/\\\\}"
+            escaped="${escaped//&/\\&}"
+            escaped="${escaped//|/\\|}"
+            sed -i "s|^${key}=.*|${key}=${escaped}|" "$cfg_file"
         else
             echo "${key}=${value}" >> "$cfg_file"
         fi
     done
+}
+
+# Loads a .cfg file's KEY=VALUE lines as variables — without `source`ing
+# it, so the file is data, never executed as shell code. Blank lines and
+# #-comments are skipped; any line that isn't a plain KEY=VALUE assignment
+# is silently ignored rather than run. Also clears the known keys first,
+# so a key missing from this app's file doesn't leak over from the last.
+load_cfg() {
+    local cfg_file="$1"
+    local line key value
+
+    unset manager repo repo_filename allow_prereleases \
+          repo_url feed_url channel arch_key download_base \
+          url content_length last_modified current_version
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+        if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            value="${BASH_REMATCH[2]}"
+            # Strip one layer of surrounding double quotes and unescape \"
+            # — the form update_cfg writes for values with spaces/quotes.
+            if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+                value="${value#\"}"
+                value="${value%\"}"
+                value="${value//\\\"/\"}"
+            fi
+            printf -v "$key" '%s' "$value"
+        fi
+    done < "$cfg_file"
 }
 
 # ---------------------------------------------------------------------------
@@ -169,13 +207,7 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
     app_name=$(basename "$cfg_file")
     app_name="${app_name%.appimage.cfg}"
 
-    # Clear previous values so a missing key doesn't leak from the last app
-    unset manager repo repo_filename allow_prereleases \
-          repo_url feed_url channel arch_key download_base \
-          url content_length last_modified current_version
-
-    # shellcheck source=/dev/null
-    source "$cfg_file"
+    load_cfg "$cfg_file"
 
     appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f | head -n 1)
 
@@ -233,6 +265,10 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
             ;;
         static)
             headers=$(curl -sIL "$url")
+            # One awk pass each instead of grep|tail|tr/cut|awk: match
+            # (case-insensitively, same as the old grep -i), keep
+            # overwriting on every match so the last one wins (same as
+            # tail -n 1), then strip the prefix/CR.
             remote_length=$(awk 'tolower($0) ~ /content-length/{v=$2} END{gsub(/\r/,"",v); print v}' <<<"$headers")
             remote_modified=$(awk 'tolower($0) ~ /last-modified/{sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
 
