@@ -33,7 +33,7 @@ extract_archive() {
 backup_appimage() {
     local appimage_file="$1"
     mkdir -p "$OLD_DIR"
-    mv "$appimage_file" "$OLD_DIR/$(basename -- "$appimage_file")"
+    mv "$appimage_file" "$OLD_DIR/${appimage_file##*/}"
 }
 
 desktop_entry_path() {
@@ -52,15 +52,15 @@ icon_exists() {
     find -L "$dir" -maxdepth 1 \
         \( -iname "${name}.png" -o -iname "${name}.svg" \
            -o -iname "${name}.xpm" -o -iname "${name}.ico" \) \
-        2>/dev/null | head -n 1
+        -print -quit 2>/dev/null
 }
 
 find_icon() {
     local dir="$1" maxdepth="$2"
     local -a find_args=(-L "$dir")
     [[ -n "$maxdepth" ]] && find_args+=(-maxdepth "$maxdepth")
-    find_args+=(\( -iname "*.png" -o -iname "*.svg" \))
-    find "${find_args[@]}" 2>/dev/null | sort -r | head -n 1
+    find_args+=(\( -iname "*.png" -o -iname "*.svg" \) -print -quit)
+    find "${find_args[@]}" 2>/dev/null
 }
 
 generate_desktop_entry() {
@@ -83,9 +83,9 @@ generate_desktop_entry() {
     local squashfs_root="$tmp_extract/squashfs-root"
 
     local embedded_desktop
-    embedded_desktop=$(find -L "$squashfs_root" -maxdepth 1 -iname "*.desktop" | head -n 1)
+    embedded_desktop=$(find -L "$squashfs_root" -maxdepth 1 -iname "*.desktop" -print -quit)
     [[ -z "$embedded_desktop" ]] && \
-        embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" | head -n 1)
+        embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
     if [[ -z "$(icon_exists "$ICONS_DIR" "$app_name")" ]]; then
         local -a icon_tiers=(
@@ -147,14 +147,11 @@ update_cfg() {
 
         # Quote the value if it contains spaces or special characters
         if [[ "$value" =~ [[:space:]\"] ]]; then
-            value="\"${value//\"/\\\"}\""   # escape any existing quotes just in case
+            value="\"${value//\"/\\\"}\""
         fi
 
         if grep -q "^${key}=" "$cfg_file"; then
-            # sed's replacement text treats \, &, and the | delimiter
-            # specially (e.g. an unescaped & is replaced with the whole
-            # matched text) — escape them so the value lands literally.
-            # Backslash first, so it doesn't double-escape what follows.
+            # Escape \, &, and | for sed's replacement text
             escaped="${value//\\/\\\\}"
             escaped="${escaped//&/\\&}"
             escaped="${escaped//|/\\|}"
@@ -165,11 +162,7 @@ update_cfg() {
     done
 }
 
-# Loads a .cfg file's KEY=VALUE lines as variables — without `source`ing
-# it, so the file is data, never executed as shell code. Blank lines and
-# #-comments are skipped; any line that isn't a plain KEY=VALUE assignment
-# is silently ignored rather than run. Also clears the known keys first,
-# so a key missing from this app's file doesn't leak over from the last.
+# Safe config loader — never executes the file
 load_cfg() {
     local cfg_file="$1"
     local line key value
@@ -185,7 +178,6 @@ load_cfg() {
             key="${BASH_REMATCH[1]}"
             value="${BASH_REMATCH[2]}"
             # Strip one layer of surrounding double quotes and unescape \"
-            # — the form update_cfg writes for values with spaces/quotes.
             if [[ "$value" == \"*\" && "$value" == *\" ]]; then
                 value="${value#\"}"
                 value="${value%\"}"
@@ -209,7 +201,7 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
 
     load_cfg "$cfg_file"
 
-    appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f | head -n 1)
+    appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
 
     if [[ -z "$appimage_file" ]]; then
         echo "⚠ $app_name: no AppImage found, skipping"
@@ -233,7 +225,7 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
                 (if type=="array" then .[0] else . end).assets[]
                 | select(.name | test($pat | gsub("\\*"; ".*")))
                 | .browser_download_url' <<<"$release_json" | head -n 1)
-            asset_name=$(basename "$asset_url")
+            asset_name="${asset_url##*/}"
             ;;
         gitlab)
             project_path="${repo_url#https://gitlab.com/}"
@@ -245,7 +237,7 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
                 .[0].assets.links[]
                 | select(.name | test($pat | gsub("\\*"; ".*")))
                 | .direct_asset_url' <<<"$release_json" | head -n 1)
-            asset_name=$(basename "$asset_url")
+            asset_name="${asset_url##*/}"
             ;;
         jsonfeed)
             feed_json=$(curl -s "$feed_url")
@@ -264,17 +256,17 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
                             -e "s|{filename}|$asset_name|" <<<"$download_base")
             ;;
         static)
-            headers=$(curl -sIL "$url")
-            # One awk pass each instead of grep|tail|tr/cut|awk: match
-            # (case-insensitively, same as the old grep -i), keep
-            # overwriting on every match so the last one wins (same as
-            # tail -n 1), then strip the prefix/CR.
+            # Single curl: headers + final effective URL
+            mapfile -t curl_out < <(curl -sIL -w '\n%{url_effective}' "$url")
+            asset_url="${curl_out[-1]}"
+            unset 'curl_out[-1]'
+            headers="${curl_out[*]}"
+
             remote_length=$(awk 'tolower($0) ~ /content-length/{v=$2} END{gsub(/\r/,"",v); print v}' <<<"$headers")
             remote_modified=$(awk 'tolower($0) ~ /last-modified/{sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
 
-            asset_url=$(curl -sIL -o /dev/null -w '%{url_effective}' "$url")
             [[ -z "$asset_url" ]] && asset_url="$url"
-            asset_name=$(basename "$asset_url")
+            asset_name="${asset_url##*/}"
             latest_tag="static-$remote_length"
             ;;
         *)
@@ -322,7 +314,7 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
                 rm -rf "$tmp_extract_dir"
                 continue
             fi
-            new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f | head -n 1)
+            new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
             if [[ -z "$new_appimage" ]]; then
                 echo "  ✗ No AppImage found inside extracted archive for $app_name"
                 rm -f "$tmp_download"
@@ -340,7 +332,7 @@ for cfg_file in "$CFG_DIR"/*.appimage.cfg; do
 
     generate_desktop_entry "$app_name" "$appimage_file"
 
-    # Persist new metadata with sed
+    # Persist new metadata
     if [[ "$manager" == "static" ]]; then
         update_cfg "$cfg_file" \
             "current_version=$latest_tag" \
