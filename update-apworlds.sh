@@ -31,8 +31,17 @@
 #            repo_filename=PATTERN   matched against the release link name
 #   static:  url=https://example.com/path/world.apworld
 #   any:     install_name=foo.apworld   force the installed filename
-#   written by this script: current_version, installed_file,
+#   written by this script: current_version, installed_file, last_checked,
 #                           content_length, last_modified (static only)
+#
+# last_checked: the date (YYYY-MM-DD) of the last successful check. A world
+# that was already checked today is skipped without any network request;
+# pass -f/--force to check everything anyway. A failed check or download
+# doesn't count, so it is retried on the next run.
+#
+# Rate limits: if GitHub/GitLab answer 429 (or a 403 that says "rate limit"),
+# the script stops right there with exit code 1 instead of burning through
+# the rest of the list. Everything finished before that is already saved.
 #
 # Installed filename: Archipelago imports a world as worlds.<filename stem>,
 # so the stem must equal the top-level folder inside the zip. Release assets
@@ -41,6 +50,14 @@
 #
 # Optional: export GITHUB_TOKEN to lift the 60 requests/hour API limit.
 set -uo pipefail
+
+force=false
+case "${1:-}" in
+    "")           ;;
+    -f|--force)   force=true ;;
+    *)            echo "Usage: ${0##*/} [-f|--force]" >&2; exit 2 ;;
+esac
+today=$(date +%F)
 
 WORLDS_DIR="${WORLDS_DIR:-/mnt/games_rando/Archipelago/custom_worlds}"
 CFG_DIR="$WORLDS_DIR/.cfg"
@@ -80,15 +97,33 @@ glob_to_regex() {
 # failed request is cached as an empty string. The result is left in the
 # global $release_json (not printed) because the cache has to be written in
 # the current shell — a $(...) call would lose it with its subshell.
+# Exits the whole script if the host says we are rate-limited.
 declare -A JSON_CACHE=()
 release_json=""
 fetch_json() {
-    local url="$1"
-    local -a curl_args=(-fsSL)
+    local url="$1" response status body host
+    local -a curl_args=(-sSL -w $'\n%{http_code}')
     if [[ ! -v "JSON_CACHE[$url]" ]]; then
         [[ "$url" == https://api.github.com/* && -n "${GITHUB_TOKEN:-}" ]] && \
             curl_args+=(-H "Authorization: Bearer $GITHUB_TOKEN")
-        JSON_CACHE[$url]=$(curl "${curl_args[@]}" "$url" 2>/dev/null || true)
+        response=$(curl "${curl_args[@]}" "$url" 2>/dev/null) || response=$'\n000'
+        status="${response##*$'\n'}"
+        body="${response%$'\n'*}"
+
+        if [[ "$status" == 429 ]] || [[ "$status" == 403 && "${body,,}" == *"rate limit"* ]]; then
+            host="${url#https://}"
+            host="${host%%/*}"
+            echo "✗ Rate-limited by $host, stopping here. Finished worlds are saved; try again later." >&2
+            [[ "$host" == api.github.com && -z "${GITHUB_TOKEN:-}" ]] && \
+                echo "  (exporting GITHUB_TOKEN raises GitHub's limit from 60 to 5000 requests/hour)" >&2
+            exit 1
+        fi
+
+        if [[ "$status" == 2* ]]; then
+            JSON_CACHE[$url]="$body"
+        else
+            JSON_CACHE[$url]=""
+        fi
     fi
     release_json="${JSON_CACHE[$url]}"
 }
@@ -161,7 +196,7 @@ load_cfg() {
 
     unset manager repo repo_filename allow_prereleases repo_url url \
           install_name installed_file content_length last_modified \
-          current_version
+          current_version last_checked
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
@@ -198,6 +233,11 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
         installed_path="$WORLDS_DIR/$installed_file"
     fi
 
+    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
+        echo "✓ $world_name already checked today (${current_version:-unknown})"
+        continue
+    fi
+
     remote_length=""
     remote_modified=""
     latest_tag=""
@@ -213,7 +253,7 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
             fi
             fetch_json "https://api.github.com/repos/${repo}/releases"
             if [[ -z "$release_json" ]]; then
-                echo "⚠ $world_name: could not fetch releases for $repo (rate-limited? try GITHUB_TOKEN), skipping"
+                echo "⚠ $world_name: could not fetch releases for $repo, skipping"
                 continue
             fi
             regex=$(glob_to_regex "$repo_filename")
@@ -279,10 +319,12 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
             if [[ -n "$remote_length" && "$remote_length" == "${content_length:-}" && \
                   "$remote_modified" == "${last_modified:-}" ]]; then
                 echo "✓ $world_name is up to date (unchanged)"
+                update_cfg "$cfg_file" "last_checked=$today"
                 continue
             fi
         elif [[ "$latest_tag" == "${current_version:-}" ]]; then
             echo "✓ $world_name is up to date ($current_version)"
+            update_cfg "$cfg_file" "last_checked=$today"
             continue
         fi
     fi
@@ -338,12 +380,14 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
         update_cfg "$cfg_file" \
             "current_version=$latest_tag" \
             "installed_file=$target_name" \
+            "last_checked=$today" \
             "content_length=$remote_length" \
             "last_modified=$remote_modified"
     else
         update_cfg "$cfg_file" \
             "current_version=$latest_tag" \
-            "installed_file=$target_name"
+            "installed_file=$target_name" \
+            "last_checked=$today"
     fi
 
     echo "  ✓ $world_name updated to $latest_tag ($target_name)"
