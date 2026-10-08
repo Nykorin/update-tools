@@ -76,9 +76,12 @@ glob_to_regex() {
     printf '^%s$' "$p"
 }
 
-# GET a URL once per run; later calls for the same URL reuse the result.
-# A failed request is cached as an empty string.
+# GET a URL once per run; later calls for the same URL reuse the result. A
+# failed request is cached as an empty string. The result is left in the
+# global $release_json (not printed) because the cache has to be written in
+# the current shell — a $(...) call would lose it with its subshell.
 declare -A JSON_CACHE=()
+release_json=""
 fetch_json() {
     local url="$1"
     local -a curl_args=(-fsSL)
@@ -87,7 +90,7 @@ fetch_json() {
             curl_args+=(-H "Authorization: Bearer $GITHUB_TOKEN")
         JSON_CACHE[$url]=$(curl "${curl_args[@]}" "$url" 2>/dev/null || true)
     fi
-    printf '%s' "${JSON_CACHE[$url]}"
+    release_json="${JSON_CACHE[$url]}"
 }
 
 # Print "<tag>\t<url>" for the newest release that has an asset matching the
@@ -208,7 +211,7 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
                 echo "⚠ $world_name: github manager needs repo and repo_filename, skipping"
                 continue
             fi
-            release_json=$(fetch_json "https://api.github.com/repos/${repo}/releases")
+            fetch_json "https://api.github.com/repos/${repo}/releases"
             if [[ -z "$release_json" ]]; then
                 echo "⚠ $world_name: could not fetch releases for $repo (rate-limited? try GITHUB_TOKEN), skipping"
                 continue
@@ -235,7 +238,7 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
             project_path="${repo_url#https://gitlab.com/}"
             encoded_path=$(urlencode "$project_path")
 
-            release_json=$(fetch_json "https://gitlab.com/api/v4/projects/${encoded_path}/releases")
+            fetch_json "https://gitlab.com/api/v4/projects/${encoded_path}/releases"
             if [[ -z "$release_json" ]]; then
                 echo "⚠ $world_name: could not fetch releases for $repo_url, skipping"
                 continue
@@ -253,7 +256,9 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
             mapfile -t curl_out < <(curl -sIL -w '\n%{url_effective}' "$url")
             asset_url="${curl_out[-1]}"
             unset 'curl_out[-1]'
-            headers="${curl_out[*]}"
+            # One header per line: joining with spaces would put the whole
+            # response on one line and awk would read the 302's status code
+            headers=$(printf '%s\n' "${curl_out[@]}")
 
             remote_length=$(awk 'tolower($0) ~ /content-length/{v=$2} END{gsub(/\r/,"",v); print v}' <<<"$headers")
             remote_modified=$(awk 'tolower($0) ~ /last-modified/{sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
