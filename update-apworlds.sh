@@ -31,6 +31,10 @@
 #            repo_filename=PATTERN   matched against the release link name
 #   static:  url=https://example.com/path/world.apworld
 #   any:     install_name=foo.apworld   force the installed filename
+#            apworld_filename=PATTERN   only for release zips that bundle the
+#                                       .apworld with game-side files (see
+#                                       below); glob on the file's own name,
+#                                       default *.apworld
 #   written by this script: current_version, installed_file, last_checked,
 #                           content_length, last_modified (static only)
 #
@@ -42,6 +46,13 @@
 # Rate limits: if GitHub/GitLab answer 429 (or a 403 that says "rate limit"),
 # the script stops right there with exit code 1 instead of burning through
 # the rest of the list. Everything finished before that is already saved.
+#
+# Bundle zips: some releases are a zip holding the .apworld next to the game
+# mod's own files (BepInEx plugin, binaries...). If the downloaded zip
+# contains a .apworld, only that file is extracted and installed; the rest is
+# left alone, since it belongs in the game's folder, not custom_worlds. Point
+# repo_filename at the zip (e.g. *.zip). If the zip holds several .apworld
+# files, apworld_filename must pick one, otherwise the update is skipped.
 #
 # Installed filename: Archipelago imports a world as worlds.<filename stem>,
 # so the stem must equal the top-level folder inside the zip. Release assets
@@ -159,6 +170,53 @@ pick_gitlab_asset() {
         end' <<<"$json" 2>/dev/null
 }
 
+# If the download is a bundle zip (it contains .apworld files), replace it
+# with the single .apworld extracted from it. Works on the globals
+# $tmp_download and $zip_listing; returns 1 (after printing why) on failure.
+# A plain .apworld contains no .apworld entries, so it passes through as is.
+unbundle_apworld() {
+    local pattern="${apworld_filename:-*.apworld}"
+    local entry base member escaped extracted total
+    local -a matches=()
+
+    grep -qi '\.apworld$' <<<"$zip_listing" || return 0
+
+    while IFS= read -r entry; do
+        [[ "$entry" == */ ]] && continue
+        base="${entry##*/}"
+        # shellcheck disable=SC2053 # unquoted on purpose: glob match
+        [[ "${base,,}" == ${pattern,,} ]] && matches+=("$entry")
+    done <<<"$zip_listing"
+
+    if (( ${#matches[@]} == 0 )); then
+        echo "  ✗ $world_name: no .apworld matching '$pattern' inside the release zip"
+        return 1
+    elif (( ${#matches[@]} > 1 )); then
+        echo "  ✗ $world_name: release zip holds several .apworld files, set apworld_filename to pick one:"
+        printf '      %s\n' "${matches[@]##*/}"
+        return 1
+    fi
+
+    member="${matches[0]}"
+    # unzip treats member arguments as wildcard patterns, so escape [ ] * ? \
+    escaped=$(sed 's/[][*?\\]/\\&/g' <<<"$member")
+    extracted=$(mktemp -p "$TMP_DIR" "extracted.XXXXXX")
+    if ! unzip -p "$tmp_download" "$escaped" > "$extracted" || [[ ! -s "$extracted" ]]; then
+        echo "  ✗ $world_name: could not extract $member from the release zip"
+        rm -f "$extracted"
+        return 1
+    fi
+
+    rm -f "$tmp_download"
+    tmp_download="$extracted"
+    if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
+        echo "  ✗ $world_name: ${member##*/} inside the release zip is not a valid .apworld"
+        return 1
+    fi
+    total=$(grep -vc '/$' <<<"$zip_listing")
+    echo "  📦 extracted ${member##*/} from the release zip (other files in it are left alone)"
+}
+
 # Update one or more key=value lines in a .cfg file using sed
 update_cfg() {
     local cfg_file="$1"
@@ -195,7 +253,7 @@ load_cfg() {
     local line key value
 
     unset manager repo repo_filename allow_prereleases repo_url url \
-          install_name installed_file content_length last_modified \
+          install_name apworld_filename installed_file content_length last_modified \
           current_version last_checked
 
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -349,6 +407,10 @@ for cfg_file in "$CFG_DIR"/*.apworld.cfg; do
 
     if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
         echo "  ✗ $world_name: download is not a valid .apworld (zip), keeping current version"
+        rm -f "$tmp_download"
+        continue
+    fi
+    if ! unbundle_apworld; then
         rm -f "$tmp_download"
         continue
     fi
