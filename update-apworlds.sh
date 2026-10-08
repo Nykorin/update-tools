@@ -176,7 +176,7 @@ pick_gitlab_asset() {
 # A plain .apworld contains no .apworld entries, so it passes through as is.
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"
-    local entry base member escaped extracted total
+    local entry base member escaped extracted ch
     local -a matches=()
 
     grep -qi '\.apworld$' <<<"$zip_listing" || return 0
@@ -199,7 +199,10 @@ unbundle_apworld() {
 
     member="${matches[0]}"
     # unzip treats member arguments as wildcard patterns, so escape [ ] * ? \
-    escaped=$(sed 's/[][*?\\]/\\&/g' <<<"$member")
+    escaped="$member"
+    for ch in "\\" '[' ']' '*' '?'; do
+        escaped="${escaped//"$ch"/\\"$ch"}"
+    done
     extracted=$(mktemp -p "$TMP_DIR" "extracted.XXXXXX")
     if ! unzip -p "$tmp_download" "$escaped" > "$extracted" || [[ ! -s "$extracted" ]]; then
         echo "  ✗ $world_name: could not extract $member from the release zip"
@@ -213,7 +216,6 @@ unbundle_apworld() {
         echo "  ✗ $world_name: ${member##*/} inside the release zip is not a valid .apworld"
         return 1
     fi
-    total=$(grep -vc '/$' <<<"$zip_listing")
     echo "  📦 extracted ${member##*/} from the release zip (other files in it are left alone)"
 }
 
