@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# update-appimages.sh
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/common.sh"
+[[ -f "$SCRIPT_DIR/progress.sh" ]] && source "$SCRIPT_DIR/progress.sh"
+
+desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
+
+ensure_desktop_entry() {
+    [[ -f "$(desktop_entry_path "$1")" ]] || generate_desktop_entry "$1" "$2"
+}
+
+icon_exists() {
+    find -L "$1" -maxdepth 1 \
+        \( -iname "$2.png" -o -iname "$2.svg" -o -iname "$2.xpm" -o -iname "$2.ico" \) \
+        -print -quit 2>/dev/null
+}
+
+# $1 dir, $2 maxdepth (empty = unlimited), $3 non-empty = pick by version sort
+# (scalable first, else the largest size). Needed for icon-theme trees, where
+# find's own order is arbitrary and could hand back a 16x16 icon.
+find_icon() {
+    local -a args=(-L "$1")
+    [[ -n "$2" ]] && args+=(-maxdepth "$2")
+    args+=(\( -iname "*.png" -o -iname "*.svg" \))
+    if [[ -n "${3:-}" ]]; then
+        find "${args[@]}" 2>/dev/null | sort -rV | head -n 1
+    else
+        find "${args[@]}" -print -quit 2>/dev/null
+    fi
+}
+
+generate_desktop_entry() {
+    local app_name="$1" appimage_file="$2"
+    mkdir -p "$ICONS_DIR"
+    local icon_dest="$ICONS_DIR/$app_name"
+    local desktop_dest; desktop_dest=$(desktop_entry_path "$app_name")
+    local tmp_extract; tmp_extract=$(mktemp -d)
+
+    if ! (cd "$tmp_extract" && "$appimage_file" --appimage-extract &>/dev/null); then
+        say "  ✗ Failed to extract AppImage contents for $app_name"
+        rm -rf "$tmp_extract"; return 1
+    fi
+
+    local squashfs_root="$tmp_extract/squashfs-root"
+    local embedded_desktop
+    embedded_desktop=$(find -L "$squashfs_root" -maxdepth 1 -iname "*.desktop" -print -quit)
+    [[ -z "$embedded_desktop" ]] && \
+        embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
+
+    if [[ -z "$(icon_exists "$ICONS_DIR" "$app_name")" ]]; then
+        # tiers, in priority order, as "dir:maxdepth:sorted"
+        local icon_src="" tier dir maxdepth sorted
+        for tier in "$squashfs_root:1:" "$squashfs_root/usr/share/icons::sorted" "$squashfs_root::"; do
+            IFS=: read -r dir maxdepth sorted <<<"$tier"
+            icon_src=$(find_icon "$dir" "$maxdepth" "$sorted")
+            [[ -n "$icon_src" ]] && break
+        done
+        if [[ -n "$icon_src" ]]; then
+            cp "$icon_src" "${icon_dest}.${icon_src##*.}"
+            status "🖼 icon extracted"
+        else
+            say "  ⚠ No icon found for $app_name"
+        fi
+    fi
+
+    local icon_path; icon_path=$(icon_exists "$ICONS_DIR" "$app_name")
+
+    if [[ -n "$embedded_desktop" ]]; then
+        sed -e "s|^Icon=.*|Icon=${icon_path:-}|" \
+            -e "s|^TryExec=.*|TryExec=$appimage_file|" \
+            -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $appimage_file %f|" \
+            "$embedded_desktop" > "$desktop_dest"
+        status "󰴚 desktop entry built from embedded metadata"
+    else
+        cat > "$desktop_dest" <<EOF
+[Desktop Entry]
+Type=Application
+Name=$app_name
+Icon=${icon_path:-}
+TryExec=$appimage_file
+Exec=env DESKTOPINTEGRATION=1 $appimage_file %f
+Categories=Utility;
+X-AppImage-Name=$app_name
+EOF
+        say "  ⚠ No embedded .desktop found, generated minimal entry for $app_name"
+    fi
+    rm -rf "$tmp_extract"
+}
+
+main() {
+    local force=false
+    case "${1:-}" in
+        "")           ;;
+        -f|--force)   force=true ;;
+        *)            echo "Usage: ${0##*/} [-f|--force]" >&2; exit 2 ;;
+    esac
+    local today
+    today=$(date +%F)
+
+    APPIMAGES_DIR="$HOME/AppImages"
+    CFG_DIR="$APPIMAGES_DIR/.cfg"
+    ICONS_DIR="$APPIMAGES_DIR/.icons"
+    OLD_DIR="$APPIMAGES_DIR/.old"
+
+    require_cmds curl jq
+    mkdir -p "$CFG_DIR" "$ICONS_DIR" "$OLD_DIR"
+
+    GITHUB_HEADERS=$(mktemp)
+    trap 'rm -f "$GITHUB_HEADERS"' EXIT
+    load_github_token
+
+    shopt -s nullglob
+    local cfg_files=("$CFG_DIR"/*.appimage.cfg)
+    init_progress "${#cfg_files[@]}"
+
+    local i cfg_file app_name appimage_file
+    local tmp_download new_appimage tmp_extract_dir
+
+    for i in "${!cfg_files[@]}"; do
+        commit_final
+        cfg_file="${cfg_files[$i]}"
+        app_name="${cfg_file##*/}"
+        app_name="${app_name%.appimage.cfg}"
+
+        PROGRESS_DONE=$i
+        PROGRESS_LABEL="$app_name"
+        STATUS=""
+        block_redraw
+
+        load_cfg "$cfg_file"
+
+        appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
+        if [[ -z "$appimage_file" ]]; then
+            say "⚠ $app_name: no AppImage found, skipping"
+            continue
+        fi
+
+        if [[ "$force" == false && "${last_checked:-}" == "$today" ]]; then
+            status_final "✓ already checked today (${current_version:-unknown})"
+            ensure_desktop_entry "$app_name" "$appimage_file"
+            continue
+        fi
+
+        if ! resolve_latest_asset; then
+            continue
+        fi
+
+        if is_up_to_date; then
+            status_final "✓ up to date (${current_version:-$latest_tag})"
+            update_cfg "$cfg_file" "last_checked=$today"
+            ensure_desktop_entry "$app_name" "$appimage_file"
+            continue
+        fi
+
+        status "⬆ updating"
+        tmp_download=$(mktemp --suffix="-$asset_name")
+
+        curl_takeover
+        if ! curl_run -L --progress-bar "$asset_url" -o "$tmp_download"; then
+            curl_abandon
+            say "  ✗ Failed to download update for $app_name"
+            rm -f "$tmp_download"
+            continue
+        fi
+        curl_handback
+
+        # Handle archived AppImages
+        new_appimage="$tmp_download"
+        tmp_extract_dir=""
+        case "$asset_name" in
+            *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
+                tmp_extract_dir=$(mktemp -d)
+                if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
+                    say "  ✗ Failed to extract archive for $app_name"
+                    rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
+                    continue
+                fi
+                new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
+                if [[ -z "$new_appimage" ]]; then
+                    say "  ✗ No AppImage found inside extracted archive for $app_name"
+                    rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
+                    continue
+                fi
+                ;;
+        esac
+
+        backup_file "$appimage_file"
+        mv "$new_appimage" "$appimage_file"
+        chmod +x "$appimage_file"
+        rm -f "$tmp_download"
+        [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+
+        generate_desktop_entry "$app_name" "$appimage_file"
+
+        save_update_metadata "$cfg_file"
+        status_final "✓ updated to $latest_tag"
+    done
+
+    finish_progress
+}
+
+main "$@"

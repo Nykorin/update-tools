@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# update-apworlds.sh
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/common.sh"
+[[ -f "$SCRIPT_DIR/progress.sh" ]] && source "$SCRIPT_DIR/progress.sh"
+
+unbundle_apworld() {
+    local pattern="${apworld_filename:-*.apworld}"
+    local entry base member extracted
+    local -a matches=()
+
+    grep -qi '\.apworld$' <<<"$zip_listing" || return 0
+
+    while IFS= read -r entry; do
+        [[ "$entry" == */ ]] && continue
+        base="${entry##*/}"
+        # shellcheck disable=SC2053
+        [[ "${base,,}" == ${pattern,,} ]] && matches+=("$entry")
+    done <<<"$zip_listing"
+
+    if (( ${#matches[@]} == 0 )); then
+        say "  ✗ no .apworld matching '$pattern' inside the release zip"
+        return 1
+    elif (( ${#matches[@]} > 1 )); then
+        say "  ✗ release zip holds several .apworld files, set apworld_filename:"
+        printf '      %s\n' "${matches[@]##*/}"
+        return 1
+    fi
+
+    member="${matches[0]}"
+    extracted=$(mktemp -p "$TMP_DIR" "extracted.XXXXXX")
+    if ! extract_member "$tmp_download" "$member" "$extracted"; then
+        say "  ✗ could not extract $member"
+        rm -f "$extracted"
+        return 1
+    fi
+
+    rm -f "$tmp_download"
+    tmp_download="$extracted"
+    # .apworld files are themselves zips
+    if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
+        say "  ✗ extracted file is not a valid .apworld"
+        return 1
+    fi
+    status "📦 extracted ${member##*/}"
+}
+
+main() {
+    local force=false
+    case "${1:-}" in
+        "")           ;;
+        -f|--force)   force=true ;;
+        *)            echo "Usage: ${0##*/} [-f|--force]" >&2; exit 2 ;;
+    esac
+    local today
+    today=$(date +%F)
+
+    WORLDS_DIR="${WORLDS_DIR:-/mnt/games_rando/Archipelago/custom_worlds}"
+    CFG_DIR="$WORLDS_DIR/.cfg"
+    OLD_DIR="$WORLDS_DIR/.old"
+    TMP_DIR="$WORLDS_DIR/.tmp"
+
+    require_cmds curl jq unzip
+    mkdir -p "$CFG_DIR" "$OLD_DIR" "$TMP_DIR"
+
+    GITHUB_HEADERS=$(mktemp)
+    trap 'rm -f "$GITHUB_HEADERS"' EXIT
+    load_github_token
+
+    shopt -s nullglob
+    local cfg_files=("$CFG_DIR"/*.apworld.cfg)
+    init_progress "${#cfg_files[@]}"
+
+    local i cfg_file world_name installed_path
+    local tmp_download target target_name
+    local -a top_dirs
+
+    for i in "${!cfg_files[@]}"; do
+        commit_final
+        cfg_file="${cfg_files[$i]}"
+        world_name="${cfg_file##*/}"
+        world_name="${world_name%.apworld.cfg}"
+
+        PROGRESS_DONE=$i
+        PROGRESS_LABEL="$world_name"
+        STATUS=""
+        block_redraw
+
+        load_cfg "$cfg_file"
+
+        installed_path=""
+        if [[ -n "${installed_file:-}" && -f "$WORLDS_DIR/$installed_file" ]]; then
+            installed_path="$WORLDS_DIR/$installed_file"
+        fi
+
+        if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
+            status_final "✓ already checked today (${current_version:-unknown})"
+            continue
+        fi
+
+        if ! resolve_latest_asset; then
+            continue
+        fi
+
+        if [[ -n "$installed_path" ]] && is_up_to_date; then
+            status_final "✓ up to date (${current_version:-$latest_tag})"
+            update_cfg "$cfg_file" "last_checked=$today"
+            continue
+        fi
+
+        if [[ -n "$installed_path" ]]; then
+            status "⬆ updating"
+        else
+            status "⬇ installing"
+        fi
+
+        tmp_download=$(mktemp -p "$TMP_DIR" "download.XXXXXX")
+
+        curl_takeover
+        if ! curl -fL --progress-bar "$asset_url" -o "$tmp_download"; then
+            curl_abandon
+            say "  ✗ Failed to download"
+            rm -f "$tmp_download"
+            continue
+        fi
+        curl_handback
+
+        if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
+            say "  ✗ download is not a valid .apworld (zip)"
+            rm -f "$tmp_download"
+            continue
+        fi
+        if ! unbundle_apworld; then
+            rm -f "$tmp_download"
+            continue
+        fi
+
+        mapfile -t top_dirs < <(awk -F/ 'NF>1 && $1!="" {print $1}' <<<"$zip_listing" | sort -u)
+
+        if [[ -n "${install_name:-}" ]]; then
+            target_name="$install_name"
+        elif (( ${#top_dirs[@]} == 1 )); then
+            target_name="${top_dirs[0]}.apworld"
+        else
+            target_name="$asset_name"
+        fi
+
+        if (( ${#top_dirs[@]} != 1 )) || [[ "${target_name%.apworld}" != "${top_dirs[0]}" ]]; then
+            say "  ⚠ $target_name doesn't match module folder (${top_dirs[*]:-none})"
+        fi
+
+        target="$WORLDS_DIR/$target_name"
+        [[ -f "$target" ]] && backup_file "$target"
+        [[ -n "$installed_path" && "$installed_path" != "$target" && -f "$installed_path" ]] && \
+            backup_file "$installed_path"
+
+        mv "$tmp_download" "$target"
+        chmod 644 "$target"
+
+        save_update_metadata "$cfg_file" "installed_file=$target_name"
+        status_final "✓ updated to $latest_tag ($target_name)"
+    done
+
+    finish_progress
+}
+
+main "$@"
