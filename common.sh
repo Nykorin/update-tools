@@ -49,7 +49,9 @@ load_cfg() {
           feed_url channel arch_key download_base url \
           content_length last_modified current_version \
           install_name apworld_filename installed_file last_checked \
-          asset_digest etag
+          asset_digest etag \
+          checksum checksum_save download_suffix probe_days \
+          current_file iso_hash checksum_file
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue

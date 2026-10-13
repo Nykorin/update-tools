@@ -1,0 +1,288 @@
+#!/usr/bin/env bash
+# update-isos.sh
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=common.sh
+source "$SCRIPT_DIR/common.sh"
+# shellcheck source=progress.sh
+[[ -f "$SCRIPT_DIR/progress.sh" ]] && source "$SCRIPT_DIR/progress.sh"
+
+PART_FILE=""
+
+# Names in a server's directory listing, folders with a trailing "/". Copes with
+# plain index pages and SourceForge (absolute links ending in "/download").
+list_dir() {
+    curl -fsL --max-time 60 "$1" | grep -oE 'href="[^"]+"' | awk '
+        { h = substr($0, 7, length($0) - 7); sub(/[?#].*/, "", h); sub(/\/download$/, "", h)
+          dir = (h ~ /\/$/); sub(/\/$/, "", h); n = split(h, p, "/"); name = p[n]
+          if (name != "" && name != "." && name != "..") print name (dir ? "/" : "") }' | sort -u
+}
+
+# The stdin entries matching glob $1, newest first, judged by the numbers in the
+# part the wildcards matched: EndeavourOS_Titan-Nova-2026.08.15 must beat
+# Ganymede-Neo-2026.01.12, and the fixed "amd64" in a name must not count.
+sort_newest() {
+    local glob="$1" name head tail
+    head="${glob%%[\[*?]*}"; tail="${glob##*\*}"
+    while IFS= read -r name; do
+        # shellcheck disable=SC2053
+        [[ "$name" == $glob ]] && printf '%s\n' "$name"
+    done | awk -v h="${#head}" -v t="${#tail}" '
+        { k = substr($0, h + 1, length($0) - h - t); gsub(/[^0-9]+/, ".", k); gsub(/^\.|\.$/, "", k)
+          print k "\t" $0 }' | sort -t $'\t' -k1,1Vr -k2,2Vr | cut -f2
+}
+
+# $1 = URL so far (ending in "/"), rest = the remaining path segments. A glob in a
+# folder falls back to the next-newest match (up to 3) when the rest finds nothing,
+# e.g. a new release folder that so far holds only a beta.
+resolve_segments() {
+    local prefix="$1" seg="$2" cand
+    shift 2
+    (( $# )) && seg+="/"
+    if [[ "$seg" != *'*'* && "$seg" != *'['* ]]; then
+        if (( $# )); then resolve_segments "$prefix$seg" "$@"; else printf '%s\n' "$prefix$seg"; fi
+        return
+    fi
+    while IFS= read -r cand; do
+        if (( $# == 0 )); then
+            printf '%s\n' "$prefix$cand"
+            return 0
+        fi
+        resolve_segments "$prefix$cand" "$@" && return 0
+    done < <(list_dir "$prefix" | sort_newest "$seg" | head -n 3)
+    return 1
+}
+
+# Expand each glob segment of URL $1 against the server's listings. Prints the URL.
+# Runs inside $(...), so the caller reports a failure: a say here would be captured.
+resolve_glob_url() {
+    local -a segs
+    IFS=/ read -ra segs <<<"${1#*://}"
+    resolve_segments "${1%%://*}://${segs[0]}/" "${segs[@]:1}"
+}
+
+# "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines ("hash  name",
+# "hash *name", "hash  ./name") and BSD lines ("SHA256 (name) = hash"), matching
+# on the file name alone (Ultramarine lists build paths); sha512 wins over sha256,
+# and md5/sha1 entries are ignored.
+checksum_for() {
+    awk -v want="$2" '
+        { name = ""; hash = "" }
+        /^[A-Za-z0-9-]+ \(.*\) = [0-9a-fA-F]+$/ {
+            name = $0; sub(/^[^(]*\(/, "", name); sub(/\) = [0-9a-fA-F]+$/, "", name); hash = $NF }
+        /^[0-9a-fA-F]+ [ *]/ {
+            hash = $1; name = $0; sub(/^[0-9a-fA-F]+ [ *]/, "", name); sub(/^ ?\*?(\.\/)?/, "", name) }
+        { sub(/^.*\//, "", name) }
+        hash != "" && name == want {
+            n = length(hash); if ((n == 64 || n == 128) && n > best) { best = n; h = hash } }
+        END { if (best) print (best == 128 ? "sha512" : "sha256"), tolower(h) }' <<<"$1"
+}
+
+hash_file() {
+    local sum
+    read -r sum _ < <("${1}sum" "$2" 2>/dev/null)
+    printf '%s\n' "${sum:-}"
+}
+
+# Sets iso_url (what to download), iso_name and sum_url. Returns 1 to skip.
+resolve_iso() {
+    local dir_url cand day today_s now sum c cur_date
+    iso_url="" iso_name="" sum_url=""
+    if [[ -z "${url:-}" || -z "${checksum:-}" ]]; then
+        say "⚠ ${PROGRESS_LABEL:-}: cfg needs url and checksum, skipping"
+        return 1
+    fi
+    case "${manager:-}" in
+        dirlist)
+            if ! iso_url=$(resolve_glob_url "$url"); then
+                say "⚠ ${PROGRESS_LABEL:-}: nothing on the server matches ${url##*/}, skipping"
+                return 1
+            fi
+            iso_name="${iso_url##*/}"
+            dir_url="${iso_url%/*}/"
+            iso_url+="${download_suffix:-}"
+            ;;
+        static)
+            # the name comes from where the URL lands (Garuda's latest.iso redirects)
+            iso_name=$(curl -fsIL --max-time 60 -o /dev/null -w '%{url_effective}' "$url") || {
+                say "⚠ ${PROGRESS_LABEL:-}: could not reach $url, skipping"; return 1; }
+            iso_name="${iso_name%%\?*}"; iso_name="${iso_name##*/}"
+            iso_url="$url"
+            dir_url="${url%/*}/"
+            ;;
+        dateprobe)
+            # no listing (Nobara's bucket): try dates from today back, stopping at
+            # the installed one; each try is one small HEAD request
+            [[ "${current_file:-}" =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]] && cur_date="${BASH_REMATCH[0]}"
+            printf -v now '%(%s)T' -1
+            for (( day = 0; day <= ${probe_days:-90}; day++ )); do
+                printf -v today_s '%(%F)T' $(( now - day * 86400 ))
+                [[ -n "${cur_date:-}" && "$today_s" < "$cur_date" ]] && break
+                cand="${url//\{date\}/$today_s}"
+                c="$checksum"; c="${c//\{iso\}/${cand##*/}}"
+                [[ "$c" == http* ]] || c="${cand%/*}/$c"
+                if curl -fsI --max-time 30 -o /dev/null "$c"; then
+                    iso_url="$cand"; sum_url="$c"; break
+                fi
+            done
+            if [[ -z "$iso_url" ]]; then
+                if [[ -n "${cur_date:-}" ]]; then
+                    iso_url="${url//\{date\}/$cur_date}"   # nothing newer than what's installed
+                else
+                    say "⚠ ${PROGRESS_LABEL:-}: no ${url##*/} found in the last ${probe_days:-90} days, skipping"
+                    return 1
+                fi
+            fi
+            iso_name="${iso_url##*/}"
+            dir_url="${iso_url%/*}/"
+            ;;
+        *)
+            say "⚠ ${PROGRESS_LABEL:-}: unknown or missing manager '${manager:-}', skipping"
+            return 1
+            ;;
+    esac
+
+    if [[ -z "$sum_url" ]]; then
+        sum="$checksum"; sum="${sum//\{iso\}/$iso_name}"
+        [[ "$sum" == http* ]] || sum="$dir_url$sum"
+        if [[ "$sum" == *'*'* || "$sum" == *'['* ]]; then
+            if ! sum=$(resolve_glob_url "$sum"); then
+                say "⚠ ${PROGRESS_LABEL:-}: no checksum file matches ${sum##*/}, skipping"
+                return 1
+            fi
+        fi
+        sum_url="$sum"
+    fi
+}
+
+main() {
+    local force=false check_only=false arg
+    for arg in "$@"; do
+        case "$arg" in
+            -f|--force) force=true ;;
+            -n|--check) check_only=true ;;
+            *)          echo "Usage: ${0##*/} [-f|--force] [-n|--check]" >&2; exit 2 ;;
+        esac
+    done
+    local today
+    today=$(date +%F)
+
+    ISO_ROOT="${ISO_ROOT:-/mnt/ventoy/_ISO}"
+    if [[ ! -d "$ISO_ROOT" ]]; then
+        echo "ERROR: $ISO_ROOT not found. Is the Ventoy drive mounted?" >&2
+        exit 1
+    fi
+    require_cmds curl sha256sum sha512sum
+
+    # a half-downloaded ISO is useless, and a hidden .part file is easy to forget
+    trap '[[ -n "$PART_FILE" ]] && rm -f "$PART_FILE"' EXIT
+
+    local -a cfg_files
+    mapfile -t cfg_files < <(find "$ISO_ROOT" -name '*.iso.cfg' -not -path '*/.*' | sort)
+    init_progress "${#cfg_files[@]}"
+
+    local i cfg_file dir name local_path sum_text algo want got size avail sum_name
+    local iso_url iso_name sum_url
+
+    for i in "${!cfg_files[@]}"; do
+        commit_final
+        cfg_file="${cfg_files[$i]}"
+        dir="${cfg_file%/*}"
+        name="${cfg_file##*/}"
+        name="${name%.iso.cfg}"
+
+        PROGRESS_DONE=$i
+        PROGRESS_LABEL="$name"
+        STATUS=""
+        block_redraw
+
+        load_cfg "$cfg_file"
+        local_path=""
+        [[ -n "${current_file:-}" && -f "$dir/$current_file" ]] && local_path="$dir/$current_file"
+
+        if [[ "$force" == false && -n "$local_path" && "${last_checked:-}" == "$today" ]]; then
+            status_final "✓ already checked today (${current_file})"
+            continue
+        fi
+
+        resolve_iso || continue
+
+        if ! sum_text=$(curl -fsL --max-time 60 "$sum_url"); then
+            say "⚠ $name: could not fetch checksum file $sum_url, skipping"
+            continue
+        fi
+        read -r algo want <<<"$(checksum_for "$sum_text" "$iso_name")"
+        if [[ -z "${want:-}" ]]; then
+            say "⚠ $name: $iso_name isn't listed in ${sum_url##*/}, skipping"
+            continue
+        fi
+
+        if [[ -n "$local_path" ]]; then
+            # first run, or the checksum algorithm changed: hash the installed ISO once
+            if [[ "${iso_hash:-}" != "$algo:"* ]]; then
+                status "🔍 hashing $current_file"
+                iso_hash="$algo:$(hash_file "$algo" "$local_path")"
+                [[ "$check_only" == true ]] || update_cfg "$cfg_file" "iso_hash=$iso_hash"
+            fi
+            if [[ "$iso_hash" == "$algo:$want" ]]; then
+                status_final "✓ up to date ($current_file)"
+                [[ "$check_only" == true ]] || update_cfg "$cfg_file" "last_checked=$today"
+                continue
+            fi
+        fi
+
+        if [[ "$check_only" == true ]]; then
+            status_final "⬆ update available: $iso_name"
+            continue
+        fi
+
+        size=$(curl -fsIL --max-time 60 "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
+        avail=$(df --output=avail -B1 "$dir" | tail -n 1)
+        # keep 256 MiB spare; the old ISO stays until the new one verifies
+        if [[ "$size" =~ ^[0-9]+$ ]] && (( size + 268435456 > avail )); then
+            say "⚠ $name: not enough space for $iso_name ($(( size >> 20 )) MiB + 256 MiB spare needed, $(( avail >> 20 )) MiB free), skipping"
+            continue
+        fi
+
+        if [[ -n "$local_path" ]]; then
+            status "⬆ updating"
+        else
+            status "⬇ installing"
+        fi
+        # hidden and not ending in .iso, so Ventoy never lists a partial download
+        PART_FILE="$dir/.$iso_name.part"
+        curl_takeover
+        if ! curl_run -fL --progress-bar "$iso_url" -o "$PART_FILE"; then
+            curl_abandon
+            say "  ✗ Failed to download update for $name"
+            rm -f "$PART_FILE"; PART_FILE=""
+            continue
+        fi
+        curl_handback
+
+        status "🔍 verifying $iso_name"
+        got=$(hash_file "$algo" "$PART_FILE")
+        if [[ "$got" != "$want" ]]; then
+            say "  ✗ $name: checksum mismatch for $iso_name, download deleted"
+            rm -f "$PART_FILE"; PART_FILE=""
+            continue
+        fi
+        mv -f "$PART_FILE" "$dir/$iso_name"
+        PART_FILE=""
+        [[ -n "$local_path" && "$local_path" != "$dir/$iso_name" ]] && rm -f "$local_path"
+
+        sum_name="${checksum_save:-${sum_url##*/}}"
+        sum_name="${sum_name//\{iso\}/$iso_name}"
+        printf '%s\n' "$sum_text" > "$dir/$sum_name"
+        [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
+
+        update_cfg "$cfg_file" "current_file=$iso_name" "iso_hash=$algo:$want" \
+            "checksum_file=$sum_name" "last_checked=$today"
+        status_final "✓ updated to $iso_name"
+    done
+
+    finish_progress
+}
+
+main "$@"
