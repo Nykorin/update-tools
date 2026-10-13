@@ -29,6 +29,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** The "is the cfg's `installed_file` still there" lookup is one shared helper, `find_installed DIR` in `common.sh`, instead of a copy in each updater *(Claude, directed by user)*
 - **all scripts:** Each per-item loop body is now a `process_item` function (called by `run_items`) so it can be timed; output without `-d` is unchanged *(Claude, directed by user)*
 
+### Removed
+- **update-appimages.sh:** The fallback that found an AppImage named after its cfg (`NAME.appimage`) when the cfg had no `installed_file`; every cfg now has one, and a cfg without it is a first install *(Claude, directed by user)*
+
 ### Fixed
 - **common.sh:** `load_cfg` accepts only known keys and reports others; any `key=value` used to be set as a variable, so `dir=` in an ISO cfg moved where the ISO was installed *(Claude)*
 - **common.sh:** A static or jsonfeed cfg missing a required key, or a feed version without a dot, aborted the whole run (`unbound variable`); the item is now skipped with a named message *(Claude)*

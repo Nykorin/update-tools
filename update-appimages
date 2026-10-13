@@ -142,9 +142,6 @@ process_item() {
     debug "cfg: manager=${manager:-?} version=${current_version:-none} last_checked=${last_checked:-never}"
 
     installed_path=$(find_installed "$APPIMAGES_DIR")
-    # cfgs from before installed_file: the AppImage is named after the cfg
-    [[ -n "$installed_path" ]] || \
-        installed_path=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
     if [[ -n "$installed_path" ]]; then
         debug "installed file: ${installed_path##*/}"
     else
