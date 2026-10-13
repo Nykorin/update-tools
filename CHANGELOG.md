@@ -12,6 +12,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-isos.sh:** New updater for the ISOs on the Ventoy drive (`/mnt/ventoy/_ISO`), sharing `common.sh` and `progress.sh`: one cfg next to each ISO, required checksum verification before anything is replaced, the old ISO deleted only once the new one verifies, staged `.part` downloads that Ventoy can't list, a free-space check, and `-n`/`--check` *(Claude, directed by user)*
 - **update-isos.sh:** `dirlist` manager (newest file from the server's folder listings, including SourceForge), `static` (name taken from where the URL lands) and `dateprobe` (for Nobara's unlisted bucket) *(Claude, directed by user)*
 - **common.sh:** `load_cfg` clears the ISO cfg keys between items *(Claude, directed by user)*
+- **update-isos.sh:** `-r`/`--root DIR` to work on the drive wherever it's mounted; DIR can be the `_ISO` folder or the drive's mount point *(Claude, directed by user)*
 
 ### Fixed
 - **update-appimages.sh:** Downloads use `curl -f`; without it an HTTP error page (e.g. a 404) was saved as the AppImage, the working one was moved to `.old/`, and the run reported `✓ updated` *(Claude)*

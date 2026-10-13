@@ -157,20 +157,29 @@ resolve_iso() {
 }
 
 main() {
-    local force=false check_only=false arg
-    for arg in "$@"; do
-        case "$arg" in
+    local force=false check_only=false
+    local usage="Usage: ${0##*/} [-f|--force] [-n|--check] [-r|--root DIR]"
+    while (( $# )); do
+        case "$1" in
             -f|--force) force=true ;;
             -n|--check) check_only=true ;;
-            *)          echo "Usage: ${0##*/} [-f|--force] [-n|--check]" >&2; exit 2 ;;
+            -r|--root)
+                [[ -n "${2:-}" ]] || { echo "$usage" >&2; exit 2; }
+                ISO_ROOT="$2"; shift ;;
+            --root=*)   ISO_ROOT="${1#--root=}" ;;
+            *)          echo "$usage" >&2; exit 2 ;;
         esac
+        shift
     done
     local today
     today=$(date +%F)
 
+    # -r beats $ISO_ROOT beats the default; the drive's mount point works too
     ISO_ROOT="${ISO_ROOT:-/mnt/ventoy/_ISO}"
+    ISO_ROOT="${ISO_ROOT%/}"
+    [[ -d "$ISO_ROOT/_ISO" ]] && ISO_ROOT+="/_ISO"
     if [[ ! -d "$ISO_ROOT" ]]; then
-        echo "ERROR: $ISO_ROOT not found. Is the Ventoy drive mounted?" >&2
+        echo "ERROR: $ISO_ROOT not found. Is the Ventoy drive mounted? Point to it with -r DIR." >&2
         exit 1
     fi
     require_cmds curl sha256sum sha512sum
