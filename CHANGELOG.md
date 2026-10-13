@@ -29,6 +29,8 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **both updaters:** `main()` entry points so scripts can be run from any working directory *(Grok)*
 - **update-appimages.sh:** Optional GitHub token (`$GITHUB_TOKEN` or a token file), sent with `curl -H @-` so it never appears in `ps` output; first built in the monolithic script, later moved into `common.sh` *(Claude, directed by user; moved by Grok)*
 - **update-appimages.sh:** GitHub request-limit tracker: reads GitHub's `x-ratelimit-*` response headers (no extra requests) and shows requests left, reset time and requests used on the final line; first built in the monolithic script, later moved into `common.sh` *(Claude, directed by user; moved by Grok)*
+- **common.sh:** Each GitHub repo's release list is fetched once per run and shared by every world or app using that repo *(Claude, directed by user)*
+- **update-apworlds.sh:** A GitHub rate limit (429, or 403 mentioning "rate limit") stops the run; the AppImage script skips instead *(Claude, directed by user)*
 
 ### Changed
 - **update-appimages.sh:** Rewritten as a thin script sourcing `common.sh` + optional `progress.sh` *(Grok)*
@@ -45,6 +47,11 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-appimages.sh:** A missing `.desktop` entry is now recreated even on an “already checked today” run *(Claude)*
 - **update-appimages.sh:** Restored the 󰴚 desktop-entry status wording (“desktop entry built from embedded metadata”) *(Claude)*
 - **update-appimages.sh, common.sh:** Warning and error lines name the app again; the ones raised in the shared `resolve_latest_asset` use the progress label, so both updaters benefit *(Claude)*
+- **update-apworlds.sh:** Warning and error lines name the world *(Claude, directed by user)*
+- **update-apworlds.sh:** Bundle zips were never extracted, because the staged download had no `.zip` extension *(Claude)*
+- **common.sh:** Static downloads failed when the URL redirected to a signed link, because its query string ended up in the file name *(Claude)*
+- **common.sh:** GitHub lookups only saw a repo's 30 newest releases, so worlds in repos hosting several games (Zelda 2) could never be found; now 100 *(Claude, directed by user)*
+- **common.sh:** GitHub 404s, other HTTP errors and no-response are reported as such instead of "could not resolve download URL" *(Claude)*
 
 ---
 
