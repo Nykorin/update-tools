@@ -177,16 +177,16 @@ process_item() {
 
     load_cfg "$cfg_file"
     debug "cfg: manager=${manager:-?} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
-    local_path=$(find_installed "$dir")
+    installed_path=$(find_installed "$dir")
 
-    if [[ "$force" == false && -n "$local_path" && "${last_checked:-}" == "$today" ]]; then
+    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
         status_final "✓ already checked today (${installed_file})"
         return 0
     fi
 
     resolve_iso || return 0
     if (( nothing_newer )); then
-        if [[ -n "$local_path" ]]; then
+        if [[ -n "$installed_path" ]]; then
             status_final "✓ up to date ($installed_file)"
             [[ "$check_only" == true ]] || update_cfg "$cfg_file" "last_checked=$today"
         else
@@ -209,11 +209,11 @@ process_item() {
         return 0
     fi
 
-    if [[ -n "$local_path" ]]; then
+    if [[ -n "$installed_path" ]]; then
         # first run, or the checksum algorithm changed: hash the installed ISO once
         if [[ "${iso_hash:-}" != "$algo:"* ]]; then
             status "🔍 hashing $installed_file"
-            iso_hash="$algo:$(hash_file "$algo" "$local_path")"
+            iso_hash="$algo:$(hash_file "$algo" "$installed_path")"
             [[ "$check_only" == true ]] || update_cfg "$cfg_file" "iso_hash=$iso_hash"
         fi
         debug "installed ${iso_hash:0:23}…"
@@ -238,7 +238,7 @@ process_item() {
         return 0
     fi
 
-    if [[ -n "$local_path" ]]; then
+    if [[ -n "$installed_path" ]]; then
         status "⬆ updating"
     else
         status "⬇ installing"
@@ -264,7 +264,7 @@ process_item() {
     fi
     mv -f "$PART_FILE" "$dir/$iso_name"
     PART_FILE=""
-    [[ -n "$local_path" && "$local_path" != "$dir/$iso_name" ]] && rm -f "$local_path"
+    [[ -n "$installed_path" && "$installed_path" != "$dir/$iso_name" ]] && rm -f "$installed_path"
 
     sum_name="${checksum_save:-${sum_url##*/}}"
     sum_name="${sum_name//\{iso\}/$iso_name}"
@@ -326,7 +326,7 @@ main() {
     fi
     init_progress "${#cfg_files[@]}"
 
-    local i cfg_file dir name local_path sum_text algo want got size avail sum_name
+    local i cfg_file dir name installed_path sum_text algo want got size avail sum_name
     local iso_url iso_name sum_url nothing_newer
 
     timed "total" run_items

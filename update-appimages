@@ -141,37 +141,44 @@ process_item() {
     load_cfg "$cfg_file"
     debug "cfg: manager=${manager:-?} version=${current_version:-none} last_checked=${last_checked:-never}"
 
-    appimage_file=$(find_installed "$APPIMAGES_DIR")
+    installed_path=$(find_installed "$APPIMAGES_DIR")
     # cfgs from before installed_file: the AppImage is named after the cfg
-    [[ -n "$appimage_file" ]] || \
-        appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
-    if [[ -z "$appimage_file" ]]; then
-        say "⚠ $app_name: no AppImage found, skipping"
-        return 0
+    [[ -n "$installed_path" ]] || \
+        installed_path=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
+    if [[ -n "$installed_path" ]]; then
+        debug "installed file: ${installed_path##*/}"
+    else
+        debug "not installed yet: installing it"
     fi
 
-    debug "installed file: ${appimage_file##*/}"
-    if [[ "$force" == false && "${last_checked:-}" == "$today" ]]; then
+    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
         status_final "✓ already checked today (${current_version:-unknown})"
-        ensure_desktop_entry "$app_name" "$appimage_file"
+        ensure_desktop_entry "$app_name" "$installed_path"
         return 0
     fi
 
-    # -f asks GitHub for the full release list, not just "changed since?" (a static
-    # item's etag is the server's file ETag, which it still needs to compare)
-    [[ "$force" == true && "${manager:-}" == github ]] && etag=""
+    # -f, or a first install that needs the download URL, asks GitHub for the full
+    # release list, not just "changed since?" (a static item's etag is the server's
+    # file ETag, which it still needs to compare)
+    if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
+        etag=""
+    fi
     if ! resolve_latest_asset; then
         return 0
     fi
 
-    if is_up_to_date "$appimage_file"; then
+    if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
         status_final "✓ up to date (${current_version:-$latest_tag})"
-        save_update_metadata "$cfg_file" "installed_file=${appimage_file##*/}"
-        ensure_desktop_entry "$app_name" "$appimage_file"
+        save_update_metadata "$cfg_file" "installed_file=${installed_path##*/}"
+        ensure_desktop_entry "$app_name" "$installed_path"
         return 0
     fi
 
-    status "⬆ updating"
+    if [[ -n "$installed_path" ]]; then
+        status "⬆ updating"
+    else
+        status "⬇ installing"
+    fi
     # staged next to the AppImages (same disk, not RAM-backed /tmp): installing is a rename
     tmp_download=$(mktemp -p "$STAGE_DIR" --suffix="-$asset_name")
 
@@ -210,25 +217,33 @@ process_item() {
     esac
 
     # keep the upstream name and casing (versions included), like the ISOs; a
-    # download URL without a usable AppImage name keeps the current one
-    [[ "${new_name,,}" == *.appimage ]] || new_name="${appimage_file##*/}"
-    local target="$APPIMAGES_DIR/$new_name"
-    # a stray file already using the new name is backed up too, never overwritten
-    if [[ "$target" != "$appimage_file" && -e "$target" ]]; then
-        stash_old "$appimage_file" "$target"
-    else
-        stash_old "$appimage_file"
+    # download URL without a usable AppImage name keeps the current one, or on a
+    # first install takes the cfg's name
+    if [[ "${new_name,,}" != *.appimage ]]; then
+        if [[ -n "$installed_path" ]]; then
+            new_name="${installed_path##*/}"
+        else
+            new_name="$app_name.AppImage"
+        fi
     fi
-    # both moves are renames on one disk; should the second still fail, put the old one back
+    local target="$APPIMAGES_DIR/$new_name"
+    local -a aside=()
+    [[ -n "$installed_path" ]] && aside+=("$installed_path")
+    # a stray file already using the new name is backed up too, never overwritten
+    [[ "$target" != "$installed_path" && -e "$target" ]] && aside+=("$target")
+    (( ${#aside[@]} )) && stash_old "${aside[@]}"
+    # all moves are renames on one disk; should the last still fail, put everything back
     if ! mv "$new_appimage" "$target"; then
-        unstash
+        (( ${#aside[@]} )) && unstash
         say "  ✗ $app_name: could not install the new AppImage, kept the old one"
         rm -f "$tmp_download"
         [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
         return 0
     fi
-    keep_stash
-    debug "previous version moved to $OLD_DIR/$app_name/"
+    if (( ${#aside[@]} )); then
+        keep_stash
+        debug "previous version moved to $OLD_DIR/$app_name/"
+    fi
     chmod +x "$target"
     rm -f "$tmp_download"
     [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
@@ -285,7 +300,7 @@ main() {
     fi
     init_progress "${#cfg_files[@]}"
 
-    local i cfg_file app_name appimage_file
+    local i cfg_file app_name installed_path
     local new_appimage new_name
 
     timed "total" run_items
