@@ -54,6 +54,8 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **common.sh:** GitHub 404s, other HTTP errors and no-response are reported as such instead of "could not resolve download URL" *(Claude)*
 - **update-apworlds.sh:** The file list for a bundle with several `.apworld` files was printed into the live status block on a terminal, overwriting part of it; it now goes through `say` *(Claude)*
 - **progress.sh, both updaters:** A failed download no longer leaves a stray `NAME ⬆ updating` / `⬇ installing` line above curl's error; downloads run through the new `curl_run`, which counts the rows curl used (wrapped errors, trailing blank lines) so `curl_abandon` can delete that line *(Claude)*
+- **update-appimages.sh:** `generate_desktop_entry` creates `~/.local/share/applications` when it is missing, instead of failing with a raw bash error on a fresh HOME *(Claude)*
+- **common.sh:** GitLab API errors are reported (404, other HTTP errors, no response) instead of "could not resolve download URL"; a 429 skips the remaining GitLab items without further requests, while other managers carry on *(Claude)*
 
 ---
 

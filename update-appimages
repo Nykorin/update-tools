@@ -35,9 +35,9 @@ find_icon() {
 
 generate_desktop_entry() {
     local app_name="$1" appimage_file="$2"
-    mkdir -p "$ICONS_DIR"
     local icon_dest="$ICONS_DIR/$app_name"
     local desktop_dest; desktop_dest=$(desktop_entry_path "$app_name")
+    mkdir -p "$ICONS_DIR" "${desktop_dest%/*}"
     local tmp_extract; tmp_extract=$(mktemp -d)
 
     if ! (cd "$tmp_extract" && "$appimage_file" --appimage-extract &>/dev/null); then

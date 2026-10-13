@@ -177,6 +177,33 @@ github_releases() {
     return 1
 }
 
+# Sets release_json for GitLab project path $1. Returns 1 to skip this item.
+# A 429 skips GitLab items only, unlike GitHub's stop: other managers still work.
+GITLAB_RATE_LIMITED=0
+gitlab_releases() {
+    local project="$1" response code
+    if (( GITLAB_RATE_LIMITED )); then
+        say "⚠ ${PROGRESS_LABEL:-}: GitLab rate limit reached earlier this run, skipping"
+        return 1
+    fi
+
+    response=$(curl -s -w '\n%{http_code}' "https://gitlab.com/api/v4/projects/$(urlencode "$project")/releases")
+    code="${response##*$'\n'}"
+    release_json="${response%$'\n'*}"
+
+    case "$code" in
+        200) return 0 ;;
+        429)
+            GITLAB_RATE_LIMITED=1
+            say "✗ ${PROGRESS_LABEL:-}: GitLab rate limit reached, skipping"
+            ;;
+        404) say "⚠ ${PROGRESS_LABEL:-}: GitLab project $project not found (HTTP 404), skipping" ;;
+        000) say "⚠ ${PROGRESS_LABEL:-}: no response from GitLab, skipping" ;;
+        *)   say "⚠ ${PROGRESS_LABEL:-}: GitLab request failed (HTTP $code), skipping" ;;
+    esac
+    return 1
+}
+
 read_rate_headers() {
     local line value
     while IFS= read -r line; do
@@ -349,12 +376,8 @@ resolve_latest_asset() {
                 say "⚠ ${PROGRESS_LABEL:-}: gitlab manager needs repo_url and repo_filename, skipping"
                 return 1
             fi
-            local project_path="${repo_url#https://gitlab.com/}"
-            local encoded_path
-            encoded_path=$(urlencode "$project_path")
-
             local release_json
-            release_json=$(curl -s "https://gitlab.com/api/v4/projects/${encoded_path}/releases")
+            gitlab_releases "${repo_url#https://gitlab.com/}" || return
             local result
             result=$(pick_gitlab_asset "$release_json" "$(glob_to_regex "$repo_filename")")
             IFS=$'\t' read -r latest_tag asset_url <<<"$result"
