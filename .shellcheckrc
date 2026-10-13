@@ -1,3 +1,3 @@
-# Follow the source directives in the two updaters to common.sh and progress.sh.
+# Follow the source directives in the updaters to lib/common.sh and lib/progress.sh.
 external-sources=true
 source-path=SCRIPTDIR

@@ -14,6 +14,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **common.sh:** `load_cfg` clears the ISO cfg keys between items *(Claude, directed by user)*
 - **update-isos.sh:** `-r`/`--root DIR` to work on the drive wherever it's mounted; DIR can be the `_ISO` folder or the drive's mount point *(Claude, directed by user)*
 
+### Changed
+- **all scripts:** `common.sh` and `progress.sh` moved to `lib/`, and the project moved to `~/Libraries/Projects/ClaudeCode/update-tools`; `~/.local/bin/update-tools/` now holds symlinks to the three updaters and `lib/` *(user; symlinks by Claude, directed by user)*
+
 ### Fixed
 - **update-appimages.sh:** Downloads use `curl -f`; without it an HTTP error page (e.g. a 404) was saved as the AppImage, the working one was moved to `.old/`, and the run reported `✓ updated` *(Claude)*
 - **common.sh:** GitHub release lists past the first 100 releases are now fetched page by page, only while no matching asset has been found, so older assets in big repos can be found *(Claude, directed by user)*
