@@ -103,7 +103,13 @@ process_item() {
 
     if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
         status_final "✓ up to date (${current_version:-$latest_tag})"
-        save_update_metadata "$cfg_file"
+        [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
+        return 0
+    fi
+
+    # -c: report it, download and write nothing
+    if [[ "$check_only" == true ]]; then
+        status_final "⬆ update available: $latest_tag ($asset_name)"
         return 0
     fi
 
@@ -177,12 +183,13 @@ run_items() {
 }
 
 main() {
-    local force=false arg
+    local force=false check_only=false arg
     for arg in "$@"; do
         case "$arg" in
             -f|--force) force=true ;;
+            -c|--check) check_only=true ;;
             -d|--debug) DEBUG=1 ;;
-            *)          echo "Usage: ${0##*/} [-f|--force] [-d|--debug]" >&2; exit 2 ;;
+            *)          echo "Usage: ${0##*/} [-f|--force] [-c|--check] [-d|--debug]" >&2; exit 2 ;;
         esac
     done
     local today

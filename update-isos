@@ -286,11 +286,11 @@ run_items() {
 
 main() {
     local force=false check_only=false
-    local usage="Usage: ${0##*/} [-f|--force] [-n|--check] [-r|--root DIR] [-d|--debug]"
+    local usage="Usage: ${0##*/} [-f|--force] [-c|--check] [-r|--root DIR] [-d|--debug]"
     while (( $# )); do
         case "$1" in
             -f|--force) force=true ;;
-            -n|--check) check_only=true ;;
+            -c|--check) check_only=true ;;
             -d|--debug) DEBUG=1 ;;
             -r|--root)
                 [[ -n "${2:-}" ]] || { echo "$usage" >&2; exit 2; }

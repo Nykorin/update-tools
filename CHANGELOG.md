@@ -13,11 +13,13 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-isos.sh:** `dirlist` manager (newest file from the server's folder listings, including SourceForge), `static` (name taken from where the URL lands) and `dateprobe` (for Nobara's unlisted bucket) *(Claude, directed by user)*
 - **common.sh:** `load_cfg` clears the ISO cfg keys between items *(Claude, directed by user)*
 - **update-isos.sh:** `-r`/`--root DIR` to work on the drive wherever it's mounted; DIR can be the `_ISO` folder or the drive's mount point *(Claude, directed by user)*
+- **update-appimages.sh, update-apworlds.sh:** `-c`/`--check`: look up and compare every item, report `⬆ update available: …`, and download or write nothing *(Claude, directed by user)*
 - **update-appimages.sh:** First installs: a cfg whose AppImage isn't there yet is downloaded and installed (under its upstream name) instead of being skipped with "no AppImage found" *(Claude, directed by user)*
 - **all scripts:** `-d`/`--debug` (or `DEBUG=1`) prints a decision trace: cfg values, each request and its HTTP status, cache hits, the versions or checksums compared, and the download steps *(Claude, directed by user)*
 - **all scripts:** In debug mode each item's time and the run's total are shown, measured with bash's `time` keyword *(Claude, directed by user)*
 
 ### Changed
+- **update-isos.sh:** The check-only flag is now `-c`/`--check` (was `-n`), the same as in the other two *(Claude, directed by user)*
 - **all scripts:** `common.sh` and `progress.sh` moved to `lib/`, and the project moved to `~/Libraries/Projects/ClaudeCode/update-tools`; `~/.local/bin/update-tools/` now holds symlinks to the three updaters and `lib/` *(user; symlinks by Claude, directed by user)*
 - **update-appimages.sh:** AppImages keep their upstream name and casing (e.g. `PopTracker-0.35.4-x86_64.AppImage`) instead of being renamed after the cfg; `installed_file` tracks the file, older cfgs are found by the old `NAME.appimage` name, and backups go to `.old/NAME/` (one previous version per app, kept intact if an install fails) *(Claude, directed by user)*
 - **update-isos.sh:** The ISO cfg key `current_file` is now `installed_file`, the name the other two updaters use; the 17 cfgs on the Ventoy drive were renamed to match *(Claude, directed by user)*
