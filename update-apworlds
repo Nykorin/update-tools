@@ -22,10 +22,10 @@ unbundle_apworld() {
     done <<<"$zip_listing"
 
     if (( ${#matches[@]} == 0 )); then
-        say "  ✗ no .apworld matching '$pattern' inside the release zip"
+        say "  ✗ $world_name: no .apworld matching '$pattern' inside the release zip"
         return 1
     elif (( ${#matches[@]} > 1 )); then
-        say "  ✗ release zip holds several .apworld files, set apworld_filename:"
+        say "  ✗ $world_name: release zip holds several .apworld files, set apworld_filename:"
         printf '      %s\n' "${matches[@]##*/}"
         return 1
     fi
@@ -33,7 +33,7 @@ unbundle_apworld() {
     member="${matches[0]}"
     extracted=$(mktemp -p "$TMP_DIR" "extracted.XXXXXX")
     if ! extract_member "$tmp_download" "$member" "$extracted"; then
-        say "  ✗ could not extract $member"
+        say "  ✗ $world_name: could not extract $member"
         rm -f "$extracted"
         return 1
     fi
@@ -42,7 +42,7 @@ unbundle_apworld() {
     tmp_download="$extracted"
     # .apworld files are themselves zips
     if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
-        say "  ✗ extracted file is not a valid .apworld"
+        say "  ✗ $world_name: extracted file is not a valid .apworld"
         return 1
     fi
     status "📦 extracted ${member##*/}"
@@ -122,14 +122,14 @@ main() {
         curl_takeover
         if ! curl -fL --progress-bar "$asset_url" -o "$tmp_download"; then
             curl_abandon
-            say "  ✗ Failed to download"
+            say "  ✗ Failed to download $world_name"
             rm -f "$tmp_download"
             continue
         fi
         curl_handback
 
         if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
-            say "  ✗ download is not a valid .apworld (zip)"
+            say "  ✗ $world_name: download is not a valid .apworld (zip)"
             rm -f "$tmp_download"
             continue
         fi
@@ -149,7 +149,7 @@ main() {
         fi
 
         if (( ${#top_dirs[@]} != 1 )) || [[ "${target_name%.apworld}" != "${top_dirs[0]}" ]]; then
-            say "  ⚠ $target_name doesn't match module folder (${top_dirs[*]:-none})"
+            say "  ⚠ $world_name: $target_name doesn't match module folder (${top_dirs[*]:-none})"
         fi
 
         target="$WORLDS_DIR/$target_name"
