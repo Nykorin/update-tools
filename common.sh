@@ -116,14 +116,64 @@ GITHUB_CALLS=0
 GITHUB_LIMIT=""
 GITHUB_REMAINING=""
 GITHUB_RESET=""
+GITHUB_RATE_LIMITED=0
+declare -A GITHUB_CACHE=()
 
+# Prints the body, then the HTTP status code on its own last line.
 github_api() {
     : > "$GITHUB_HEADERS"
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        curl -s -D "$GITHUB_HEADERS" -H @- "$1" <<<"Authorization: Bearer $GITHUB_TOKEN"
+        curl -s -w '\n%{http_code}' -D "$GITHUB_HEADERS" -H @- "$1" <<<"Authorization: Bearer $GITHUB_TOKEN"
     else
-        curl -s -D "$GITHUB_HEADERS" "$1"
+        curl -s -w '\n%{http_code}' -D "$GITHUB_HEADERS" "$1"
     fi
+}
+
+# Sets release_json for $1, fetching each URL once per run. Call it directly,
+# never inside $(...), or the cache is lost with the subshell.
+# Returns 1 to skip this item, 2 when GitHub is rate limiting us.
+github_releases() {
+    local api_url="$1" response code when=""
+    if [[ -n "${GITHUB_CACHE[$api_url]+set}" ]]; then
+        release_json="${GITHUB_CACHE[$api_url]}"
+        return 0
+    fi
+    if (( GITHUB_RATE_LIMITED )); then
+        say "⚠ ${PROGRESS_LABEL:-}: GitHub rate limit reached earlier this run, skipping"
+        return 2
+    fi
+
+    GITHUB_CALLS=$((GITHUB_CALLS + 1))
+    response=$(github_api "$api_url")
+    read_rate_headers
+    code="${response##*$'\n'}"
+    release_json="${response%$'\n'*}"
+
+    case "$code" in
+        200)
+            GITHUB_CACHE[$api_url]="$release_json"
+            return 0
+            ;;
+        429|403)
+            if [[ "$code" == 429 || "${release_json,,}" == *"rate limit"* ]]; then
+                GITHUB_RATE_LIMITED=1
+                [[ "$GITHUB_RESET" =~ ^[0-9]+$ ]] && printf -v when ' (resets %(%H:%M)T)' "$GITHUB_RESET"
+                say "✗ ${PROGRESS_LABEL:-}: GitHub rate limit reached${when}"
+                return 2
+            fi
+            say "⚠ ${PROGRESS_LABEL:-}: GitHub request failed (HTTP 403), skipping"
+            ;;
+        404)
+            say "⚠ ${PROGRESS_LABEL:-}: GitHub repo ${repo:-} not found (HTTP 404), skipping"
+            ;;
+        000)
+            say "⚠ ${PROGRESS_LABEL:-}: no response from GitHub, skipping"
+            ;;
+        *)
+            say "⚠ ${PROGRESS_LABEL:-}: GitHub request failed (HTTP ${code}), skipping"
+            ;;
+    esac
+    return 1
 }
 
 read_rate_headers() {
@@ -257,7 +307,7 @@ pick_gitlab_asset() {
 # ---------------------------------------------------------------------------
 # Shared asset resolution
 # Sets: latest_tag  asset_url  asset_name  remote_length  remote_modified
-# Returns 0 on success, 1 on failure
+# Returns 0 on success, 1 on failure, 2 if GitHub is rate limiting
 # ---------------------------------------------------------------------------
 resolve_latest_asset() {
     latest_tag="" asset_url="" asset_name="" remote_length="" remote_modified=""
@@ -269,12 +319,11 @@ resolve_latest_asset() {
                 return 1
             fi
 
-            local api_url="https://api.github.com/repos/${repo}/releases"
-            # Always fetch the full list so we can honour allow_prereleases=auto
-            GITHUB_CALLS=$((GITHUB_CALLS + 1))
+            # Fetch the list, not /latest, to honour allow_prereleases=auto.
+            # per_page=100: repos that host several games bury older ones past the default 30.
+            local api_url="https://api.github.com/repos/${repo}/releases?per_page=100"
             local release_json
-            release_json=$(github_api "$api_url")
-            read_rate_headers
+            github_releases "$api_url" || return
 
             local regex result
             regex=$(glob_to_regex "$repo_filename")

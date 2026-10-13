@@ -74,7 +74,7 @@ main() {
     local cfg_files=("$CFG_DIR"/*.apworld.cfg)
     init_progress "${#cfg_files[@]}"
 
-    local i cfg_file world_name installed_path
+    local i rc cfg_file world_name installed_path
     local tmp_download target target_name
     local -a top_dirs
 
@@ -101,7 +101,12 @@ main() {
             continue
         fi
 
-        if ! resolve_latest_asset; then
+        resolve_latest_asset; rc=$?
+        if (( rc == 2 )); then
+            # every further GitHub request would fail the same way
+            say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more world(s) not checked"
+            break
+        elif (( rc )); then
             continue
         fi
 
