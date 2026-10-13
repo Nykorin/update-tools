@@ -77,6 +77,11 @@ process_item() {
     debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
 
     installed_path=$(find_installed "$WORLDS_DIR")
+    if [[ -n "$installed_path" ]]; then
+        debug "installed file: ${installed_path##*/}"
+    else
+        debug "not installed yet: installing it"
+    fi
 
     if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
         status_final "✓ already checked today (${current_version:-unknown})"
@@ -143,7 +148,6 @@ process_item() {
     fi
 
     mapfile -t top_dirs < <(awk -F/ 'NF>1 && $1!="" {print $1}' <<<"$zip_listing" | sort -u)
-
     if [[ -n "${install_name:-}" ]]; then
         target_name="$install_name"
     elif (( ${#top_dirs[@]} == 1 )); then

@@ -177,14 +177,22 @@ process_item() {
 
     load_cfg "$cfg_file"
     debug "cfg: manager=${manager:-?} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
+
     installed_path=$(find_installed "$dir")
+    if [[ -n "$installed_path" ]]; then
+        debug "installed file: ${installed_path##*/}"
+    else
+        debug "not installed yet: installing it"
+    fi
 
     if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
         status_final "✓ already checked today (${installed_file})"
         return 0
     fi
 
-    resolve_iso || return 0
+    if ! resolve_iso; then
+        return 0
+    fi
     if (( nothing_newer )); then
         if [[ -n "$installed_path" ]]; then
             status_final "✓ up to date ($installed_file)"
@@ -194,10 +202,10 @@ process_item() {
         fi
         return 0
     fi
+
     debug "newest: $iso_name"
     debug "download URL: $iso_url"
     debug "checksum file: $sum_url"
-
     if ! sum_text=$(curl -fsL "${CURL_META[@]}" "$sum_url"); then
         say "⚠ $name: could not fetch checksum file $sum_url, skipping"
         return 0
@@ -223,6 +231,7 @@ process_item() {
         fi
     fi
 
+    # -c: report it, download and write nothing
     if [[ "$check_only" == true ]]; then
         status_final "⬆ update available: $iso_name"
         return 0
@@ -242,8 +251,10 @@ process_item() {
     else
         status "⬇ installing"
     fi
+
     # hidden and not ending in .iso, so Ventoy never lists a partial download
     PART_FILE="$dir/.$iso_name.part"
+
     curl_takeover
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$iso_url" -o "$PART_FILE"; then
         curl_abandon
@@ -252,6 +263,7 @@ process_item() {
         return 0
     fi
     curl_handback
+    debug "downloaded to $PART_FILE"
 
     status "🔍 verifying $iso_name"
     got=$(hash_file "$algo" "$PART_FILE")
@@ -261,6 +273,7 @@ process_item() {
         rm -f "$PART_FILE"; PART_FILE=""
         return 0
     fi
+
     mv -f "$PART_FILE" "$dir/$iso_name"
     PART_FILE=""
     [[ -n "$installed_path" && "$installed_path" != "$dir/$iso_name" ]] && rm -f "$installed_path"

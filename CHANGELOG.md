@@ -19,6 +19,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** In debug mode each item's time and the run's total are shown, measured with bash's `time` keyword *(Claude, directed by user)*
 
 ### Changed
+- **all scripts:** The three `process_item` functions follow the same step order and spacing; `-d` gains matching "installed file" / "not installed yet" and "downloaded to" lines where a script lacked them *(Claude, directed by user)*
 - **update-isos.sh:** The check-only flag is now `-c`/`--check` (was `-n`), the same as in the other two *(Claude, directed by user)*
 - **all scripts:** `common.sh` and `progress.sh` moved to `lib/`, and the project moved to `~/Libraries/Projects/ClaudeCode/update-tools`; `~/.local/bin/update-tools/` now holds symlinks to the three updaters and `lib/` *(user; symlinks by Claude, directed by user)*
 - **update-appimages.sh:** AppImages keep their upstream name and casing (e.g. `PopTracker-0.35.4-x86_64.AppImage`) instead of being renamed after the cfg; `installed_file` tracks the file, older cfgs are found by the old `NAME.appimage` name, and backups go to `.old/NAME/` (one previous version per app, kept intact if an install fails) *(Claude, directed by user)*

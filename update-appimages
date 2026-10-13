@@ -187,6 +187,7 @@ process_item() {
     else
         status "⬇ installing"
     fi
+
     # staged next to the AppImages (same disk, not RAM-backed /tmp): installing is a rename
     tmp_download=$(mktemp -p "$STAGE_DIR" --suffix="-$asset_name")
 
@@ -201,7 +202,7 @@ process_item() {
     curl_handback
     debug "downloaded to $tmp_download"
 
-    # Handle archived AppImages
+    # archived AppImages: extract, then install the AppImage inside
     new_appimage="$tmp_download"
     new_name="$asset_name"
     tmp_extract_dir=""
@@ -234,12 +235,14 @@ process_item() {
             new_name="$app_name.AppImage"
         fi
     fi
+
     local target="$APPIMAGES_DIR/$new_name"
     local -a aside=()
     [[ -n "$installed_path" ]] && aside+=("$installed_path")
     # a stray file already using the new name is backed up too, never overwritten
     [[ "$target" != "$installed_path" && -e "$target" ]] && aside+=("$target")
     (( ${#aside[@]} )) && stash_old "${aside[@]}"
+
     # all moves are renames on one disk; should the last still fail, put everything back
     if ! mv "$new_appimage" "$target"; then
         (( ${#aside[@]} )) && unstash
