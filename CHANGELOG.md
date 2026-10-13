@@ -52,6 +52,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **common.sh:** Static downloads failed when the URL redirected to a signed link, because its query string ended up in the file name *(Claude)*
 - **common.sh:** GitHub lookups only saw a repo's 30 newest releases, so worlds in repos hosting several games (Zelda 2) could never be found; now 100 *(Claude, directed by user)*
 - **common.sh:** GitHub 404s, other HTTP errors and no-response are reported as such instead of "could not resolve download URL" *(Claude)*
+- **update-apworlds.sh:** The file list for a bundle with several `.apworld` files was printed into the live status block on a terminal, overwriting part of it; it now goes through `say` *(Claude)*
 
 ---
 

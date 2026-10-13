@@ -9,7 +9,7 @@ source "$SCRIPT_DIR/common.sh"
 
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"
-    local entry base member extracted
+    local entry base member extracted list
     local -a matches=()
 
     grep -qi '\.apworld$' <<<"$zip_listing" || return 0
@@ -25,8 +25,9 @@ unbundle_apworld() {
         say "  ✗ $world_name: no .apworld matching '$pattern' inside the release zip"
         return 1
     elif (( ${#matches[@]} > 1 )); then
-        say "  ✗ $world_name: release zip holds several .apworld files, set apworld_filename:"
-        printf '      %s\n' "${matches[@]##*/}"
+        # one say, so the list is printed above the status block, not into it
+        printf -v list '\n      %s' "${matches[@]##*/}"
+        say "  ✗ $world_name: release zip holds several .apworld files, set apworld_filename:$list"
         return 1
     fi
 
