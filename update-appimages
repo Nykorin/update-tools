@@ -71,7 +71,7 @@ generate_desktop_entry() {
     local icon_dest="$ICONS_DIR/$app_name"
     local desktop_dest; desktop_dest=$(desktop_entry_path "$app_name")
     mkdir -p "$ICONS_DIR" "${desktop_dest%/*}"
-    local tmp_extract; tmp_extract=$(mktemp -d -p "$STAGE_DIR")
+    local tmp_extract; tmp_extract=$(mktemp -d -p "$TMP_DIR")
     DESKTOP_TMP="$tmp_extract"
 
     if ! (cd "$tmp_extract" && "$appimage_file" --appimage-extract &>/dev/null); then
@@ -186,7 +186,7 @@ process_item() {
     fi
 
     # staged next to the AppImages (same disk, not RAM-backed /tmp): installing is a rename
-    tmp_download=$(mktemp -p "$STAGE_DIR" --suffix="-$asset_name")
+    tmp_download=$(mktemp -p "$TMP_DIR" --suffix="-$asset_name" "download.XXXXXX")
 
     curl_takeover
     # -f: an HTTP error page must never replace a working AppImage
@@ -205,7 +205,7 @@ process_item() {
     tmp_extract_dir=""
     case "$asset_name" in
         *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
-            tmp_extract_dir=$(mktemp -d -p "$STAGE_DIR")
+            tmp_extract_dir=$(mktemp -d -p "$TMP_DIR")
             if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
                 say "  ✗ Failed to extract archive for $app_name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
@@ -292,11 +292,11 @@ main() {
     OLD_DIR="$APPIMAGES_DIR/.old"
 
     require_cmds curl jq
-    STAGE_DIR="$APPIMAGES_DIR/.tmp"
+    TMP_DIR="$APPIMAGES_DIR/.tmp"
     mkdir -p "$CFG_DIR" "$ICONS_DIR" "$OLD_DIR"
     # anything left here is from an interrupted earlier run
-    rm -rf "$STAGE_DIR"
-    mkdir -p "$STAGE_DIR"
+    rm -rf "$TMP_DIR"
+    mkdir -p "$TMP_DIR"
 
     GITHUB_HEADERS=$(mktemp)
     trap cleanup EXIT

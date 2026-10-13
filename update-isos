@@ -8,7 +8,13 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/progress.sh
 [[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
 
-PART_FILE=""
+# The staged download, global so the EXIT trap can remove it after a Ctrl+C.
+tmp_download=""
+
+cleanup() {
+    [[ -n "$tmp_download" ]] && rm -f "$tmp_download"
+    return 0
+}
 
 # Names in a server's directory listing, folders with a trailing "/". Copes with
 # plain index pages and SourceForge (absolute links ending in "/download").
@@ -252,30 +258,31 @@ process_item() {
         status "⬇ installing"
     fi
 
-    # hidden and not ending in .iso, so Ventoy never lists a partial download
-    PART_FILE="$dir/.$iso_name.part"
+    # next to the ISO (same filesystem, so installing is a rename), hidden and not
+    # ending in .iso so Ventoy never lists a partial download
+    tmp_download=$(mktemp -p "$dir" --suffix=.part ".download.XXXXXX")
 
     curl_takeover
-    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$iso_url" -o "$PART_FILE"; then
+    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$iso_url" -o "$tmp_download"; then
         curl_abandon
         say "  ✗ Failed to download update for $name"
-        rm -f "$PART_FILE"; PART_FILE=""
+        rm -f "$tmp_download"; tmp_download=""
         return 0
     fi
     curl_handback
-    debug "downloaded to $PART_FILE"
+    debug "downloaded to $tmp_download"
 
     status "🔍 verifying $iso_name"
-    got=$(hash_file "$algo" "$PART_FILE")
+    got=$(hash_file "$algo" "$tmp_download")
     debug "downloaded file's $algo: ${got:0:16}…"
     if [[ "$got" != "$want" ]]; then
         say "  ✗ $name: checksum mismatch for $iso_name, download deleted"
-        rm -f "$PART_FILE"; PART_FILE=""
+        rm -f "$tmp_download"; tmp_download=""
         return 0
     fi
 
-    mv -f "$PART_FILE" "$dir/$iso_name"
-    PART_FILE=""
+    mv -f "$tmp_download" "$dir/$iso_name"
+    tmp_download=""
     [[ -n "$installed_path" && "$installed_path" != "$dir/$iso_name" ]] && rm -f "$installed_path"
 
     sum_name="${checksum_save:-${sum_url##*/}}"
@@ -327,7 +334,9 @@ main() {
     require_cmds curl sha256sum sha512sum
 
     # a half-downloaded ISO is useless, and a hidden .part file is easy to forget
-    trap '[[ -n "$PART_FILE" ]] && rm -f "$PART_FILE"' EXIT
+    trap cleanup EXIT
+    # left over from a run that was killed outright (Ctrl+C cleans up after itself)
+    find "$ISO_ROOT" -mindepth 1 -name '.download.*.part' -type f -delete
 
     local -a cfg_files
     # skip hidden folders below the root only: the root's own path may contain one
