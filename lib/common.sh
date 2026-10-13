@@ -97,7 +97,7 @@ CFG_KEYS=(
     install_name apworld_filename installed_file last_checked
     asset_digest etag
     checksum checksum_save download_suffix probe_days
-    current_file iso_hash checksum_file
+    iso_hash checksum_file
 )
 
 load_cfg() {

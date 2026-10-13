@@ -19,6 +19,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ### Changed
 - **all scripts:** `common.sh` and `progress.sh` moved to `lib/`, and the project moved to `~/Libraries/Projects/ClaudeCode/update-tools`; `~/.local/bin/update-tools/` now holds symlinks to the three updaters and `lib/` *(user; symlinks by Claude, directed by user)*
 - **update-appimages.sh:** AppImages keep their upstream name and casing (e.g. `PopTracker-0.35.4-x86_64.AppImage`) instead of being renamed after the cfg; `installed_file` tracks the file, older cfgs are found by the old `NAME.appimage` name, and backups go to `.old/NAME/` (one previous version per app, kept intact if an install fails) *(Claude, directed by user)*
+- **update-isos.sh:** The ISO cfg key `current_file` is now `installed_file`, the name the other two updaters use; the 17 cfgs on the Ventoy drive were renamed to match *(Claude, directed by user)*
 - **all scripts:** Each per-item loop body is now a `process_item` function (called by `run_items`) so it can be timed; output without `-d` is unchanged *(Claude, directed by user)*
 
 ### Fixed
