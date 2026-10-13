@@ -3,8 +3,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
+# shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
+# shellcheck source=progress.sh
 [[ -f "$SCRIPT_DIR/progress.sh" ]] && source "$SCRIPT_DIR/progress.sh"
 
 unbundle_apworld() {
@@ -104,7 +105,6 @@ main() {
 
         # a 304 has no download URL, so ask for the full list when installing; -f always does
         if [[ "$force" == true || -z "$installed_path" ]]; then
-            # shellcheck disable=SC2034  # etag is read by resolve_latest_asset
             etag=""
         fi
         resolve_latest_asset; rc=$?

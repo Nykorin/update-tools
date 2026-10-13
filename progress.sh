@@ -1,5 +1,6 @@
 # progress.sh – optional live status block
 # If this file is missing the main scripts fall back to plain output.
+# shellcheck shell=bash
 
 PROGRESS_ON=0
 PROGRESS_TOTAL=0

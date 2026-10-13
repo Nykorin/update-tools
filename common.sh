@@ -1,4 +1,7 @@
 # common.sh – shared helpers for update-appimages.sh and update-apworlds.sh
+# Cfg keys (manager, url, ...) are set by load_cfg through printf -v and today
+# by each script's main, so shellcheck can't see them assigned here.
+# shellcheck shell=bash disable=SC2154
 
 # ---------------------------------------------------------------------------
 # Fallback stubs (overwritten if progress.sh is loaded)
@@ -234,6 +237,7 @@ read_rate_headers() {
     done < "$GITHUB_HEADERS"
 }
 
+# shellcheck disable=SC2034  # STATUS is drawn by progress.sh
 rate_summary() {
     STATUS=""
     (( GITHUB_CALLS + GITHUB_FREE > 0 )) || return 0

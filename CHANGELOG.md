@@ -58,6 +58,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-appimages.sh:** `generate_desktop_entry` creates `~/.local/share/applications` when it is missing, instead of failing with a raw bash error on a fresh HOME *(Claude)*
 - **common.sh:** GitLab API errors are reported (404, other HTTP errors, no response) instead of "could not resolve download URL"; a 429 skips the remaining GitLab items without further requests, while other managers carry on *(Claude)*
 - **common.sh, both updaters:** Rolling GitHub releases (`latest`, `continuous`, e.g. DuckStation) never updated, because only the tag was compared; the asset's sha256 digest is now saved as `asset_digest` and compared too. Cfgs without it are checked once against the installed file's sha256 *(Claude, directed by user)*
+- **all scripts:** shellcheck is clean (`shellcheck` on each file exits 0): the updaters' `source` directives point at `common.sh` and `progress.sh`, a new `.shellcheckrc` lets shellcheck follow them, and `common.sh` documents the cfg keys it can't see *(Claude, directed by user)*
 
 ---
 

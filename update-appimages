@@ -3,8 +3,9 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
+# shellcheck source=common.sh
 source "$SCRIPT_DIR/common.sh"
+# shellcheck source=progress.sh
 [[ -f "$SCRIPT_DIR/progress.sh" ]] && source "$SCRIPT_DIR/progress.sh"
 
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
@@ -146,7 +147,6 @@ main() {
         fi
 
         # -f asks GitHub for the full release list, not just "changed since?"
-        # shellcheck disable=SC2034  # etag is read by resolve_latest_asset
         [[ "$force" == true ]] && etag=""
         if ! resolve_latest_asset; then
             continue
