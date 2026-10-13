@@ -3,10 +3,10 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=common.sh
-source "$SCRIPT_DIR/common.sh"
-# shellcheck source=progress.sh
-[[ -f "$SCRIPT_DIR/progress.sh" ]] && source "$SCRIPT_DIR/progress.sh"
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/progress.sh
+[[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
 
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"
