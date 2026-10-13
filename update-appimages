@@ -19,6 +19,27 @@ cleanup() {
     return 0
 }
 
+# Upstream names carry versions, so one folder per app keeps .old/ at one
+# previous version each instead of growing with every update. The current
+# file(s) wait in a pending folder until the new AppImage is in place, so a
+# failed install never costs the existing backup.
+stash_old() {
+    local pending="$OLD_DIR/.$app_name.pending"
+    rm -rf "$pending"
+    mkdir -p "$pending"
+    mv "$@" "$pending/"
+}
+keep_stash() {
+    rm -rf "${OLD_DIR:?}/$app_name"
+    mv "$OLD_DIR/.$app_name.pending" "$OLD_DIR/$app_name"
+}
+# Put the stashed file(s) back where they were.
+unstash() {
+    local pending="$OLD_DIR/.$app_name.pending" f
+    for f in "$pending"/*; do mv "$f" "$APPIMAGES_DIR/"; done
+    rmdir "$pending"
+}
+
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
 ensure_desktop_entry() {
@@ -120,7 +141,12 @@ process_item() {
     load_cfg "$cfg_file"
     debug "cfg: manager=${manager:-?} version=${current_version:-none} last_checked=${last_checked:-never}"
 
-    appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
+    if [[ -n "${installed_file:-}" && -f "$APPIMAGES_DIR/$installed_file" ]]; then
+        appimage_file="$APPIMAGES_DIR/$installed_file"
+    else
+        # cfgs from before installed_file: the AppImage is named after the cfg
+        appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
+    fi
     if [[ -z "$appimage_file" ]]; then
         say "⚠ $app_name: no AppImage found, skipping"
         return 0
@@ -142,7 +168,7 @@ process_item() {
 
     if is_up_to_date "$appimage_file"; then
         status_final "✓ up to date (${current_version:-$latest_tag})"
-        save_update_metadata "$cfg_file"
+        save_update_metadata "$cfg_file" "installed_file=${appimage_file##*/}"
         ensure_desktop_entry "$app_name" "$appimage_file"
         return 0
     fi
@@ -164,6 +190,7 @@ process_item() {
 
     # Handle archived AppImages
     new_appimage="$tmp_download"
+    new_name="$asset_name"
     tmp_extract_dir=""
     case "$asset_name" in
         *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
@@ -175,6 +202,7 @@ process_item() {
             fi
             new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
             debug "archive holds ${new_appimage:-no AppImage}"
+            new_name="${new_appimage##*/}"
             if [[ -z "$new_appimage" ]]; then
                 say "  ✗ No AppImage found inside extracted archive for $app_name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
@@ -183,23 +211,34 @@ process_item() {
             ;;
     esac
 
-    backup_file "$appimage_file"
-    debug "previous version moved to $OLD_DIR/"
+    # keep the upstream name and casing (versions included), like the ISOs; a
+    # download URL without a usable AppImage name keeps the current one
+    [[ "${new_name,,}" == *.appimage ]] || new_name="${appimage_file##*/}"
+    local target="$APPIMAGES_DIR/$new_name"
+    # a stray file already using the new name is backed up too, never overwritten
+    if [[ "$target" != "$appimage_file" && -e "$target" ]]; then
+        stash_old "$appimage_file" "$target"
+    else
+        stash_old "$appimage_file"
+    fi
     # both moves are renames on one disk; should the second still fail, put the old one back
-    if ! mv "$new_appimage" "$appimage_file"; then
-        mv "$OLD_DIR/${appimage_file##*/}" "$appimage_file"
+    if ! mv "$new_appimage" "$target"; then
+        unstash
         say "  ✗ $app_name: could not install the new AppImage, kept the old one"
         rm -f "$tmp_download"
         [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
         return 0
     fi
-    chmod +x "$appimage_file"
+    keep_stash
+    debug "previous version moved to $OLD_DIR/$app_name/"
+    chmod +x "$target"
     rm -f "$tmp_download"
     [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+    debug "installed as $new_name"
 
-    generate_desktop_entry "$app_name" "$appimage_file"
+    generate_desktop_entry "$app_name" "$target"
 
-    save_update_metadata "$cfg_file"
+    save_update_metadata "$cfg_file" "installed_file=$new_name"
     status_final "✓ updated to $latest_tag"
 }
 
@@ -249,7 +288,7 @@ main() {
     init_progress "${#cfg_files[@]}"
 
     local i cfg_file app_name appimage_file
-    local new_appimage
+    local new_appimage new_name
 
     timed "total" run_items
 
