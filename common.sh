@@ -337,7 +337,8 @@ resolve_latest_asset() {
             remote_modified=$(awk 'tolower($0) ~ /last-modified/{sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
 
             [[ -z "$asset_url" ]] && asset_url="$url"
-            asset_name="${asset_url##*/}"
+            # redirects can land on signed URLs with a long query string
+            asset_name="${asset_url%%\?*}"; asset_name="${asset_name##*/}"
             latest_tag="static-$remote_length"
             ;;
 
