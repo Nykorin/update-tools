@@ -169,7 +169,8 @@ process_item() {
 
     if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
         status_final "✓ up to date (${current_version:-$latest_tag})"
-        save_update_metadata "$cfg_file" "installed_file=${installed_path##*/}"
+        installed_file="${installed_path##*/}"
+        save_update_metadata "$cfg_file"
         ensure_desktop_entry "$app_name" "$installed_path"
         return 0
     fi
@@ -251,7 +252,8 @@ process_item() {
 
     generate_desktop_entry "$app_name" "$target"
 
-    save_update_metadata "$cfg_file" "installed_file=$new_name"
+    installed_file="$new_name"
+    save_update_metadata "$cfg_file"
     status_final "✓ updated to $latest_tag"
 }
 

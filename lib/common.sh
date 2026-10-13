@@ -173,20 +173,32 @@ find_installed() {
     return 0
 }
 
-# Save the common metadata after a successful update/check.
-# Extra key=value pairs can be passed (e.g. installed_file=foo.apworld).
+# Cfg keys the scripts keep up to date themselves, in the order new ones are added.
+SAVE_KEYS=(current_version last_checked content_length last_modified asset_digest etag
+           installed_file iso_hash checksum_file)
+
+# Save the item's state after a successful check or update; all three updaters
+# use this. Each key takes its value from the item being handled: what
+# resolve_latest_asset found (cleared for every item), or the cfg variable of the
+# same name (installed_file, iso_hash, checksum_file), which load_cfg reloads for
+# every item and the caller updates first. Empty values aren't written, so an
+# ISO cfg never gets current_version or etag.
 save_update_metadata() {
-    local cfg="$1"
-    shift
-    local -a pairs=("current_version=$latest_tag" "last_checked=$today")
-    if [[ "$manager" == "static" ]]; then
-        pairs+=("content_length=$remote_length" "last_modified=$remote_modified")
-    fi
-    # github: the asset digest catches re-uploads under the same tag; the ETag
-    # lets the next run ask "changed since?" for free
-    [[ -n "${remote_digest:-}" ]] && pairs+=("asset_digest=$remote_digest")
-    [[ -n "${remote_etag:-}" ]] && pairs+=("etag=$remote_etag")
-    update_cfg "$cfg" "${pairs[@]}" "$@"
+    local cfg="$1" key value
+    local -a pairs=()
+    for key in "${SAVE_KEYS[@]}"; do
+        case "$key" in
+            last_checked)    value="$today" ;;
+            current_version) value="${latest_tag:-}" ;;
+            content_length)  value="${remote_length:-}" ;;
+            last_modified)   value="${remote_modified:-}" ;;
+            asset_digest)    value="${remote_digest:-}" ;;
+            etag)            value="${remote_etag:-}" ;;
+            *)               value="${!key:-}" ;;
+        esac
+        [[ -n "$value" ]] && pairs+=("$key=$value")
+    done
+    update_cfg "$cfg" "${pairs[@]}"
 }
 
 # ---------------------------------------------------------------------------

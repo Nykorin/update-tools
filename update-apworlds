@@ -162,7 +162,8 @@ process_item() {
     chmod 644 "$target"
     [[ -n "$installed_path" && "$installed_path" != "$target" ]] && debug "replaced ${installed_path##*/}; old copies in $OLD_DIR/"
 
-    save_update_metadata "$cfg_file" "installed_file=$target_name"
+    installed_file="$target_name"
+    save_update_metadata "$cfg_file"
     status_final "✓ updated to $latest_tag ($target_name)"
 }
 

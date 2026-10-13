@@ -188,7 +188,7 @@ process_item() {
     if (( nothing_newer )); then
         if [[ -n "$installed_path" ]]; then
             status_final "✓ up to date ($installed_file)"
-            [[ "$check_only" == true ]] || update_cfg "$cfg_file" "last_checked=$today"
+            [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
         else
             say "⚠ $name: $installed_file is missing and the server has nothing newer, skipping"
         fi
@@ -214,12 +214,11 @@ process_item() {
         if [[ "${iso_hash:-}" != "$algo:"* ]]; then
             status "🔍 hashing $installed_file"
             iso_hash="$algo:$(hash_file "$algo" "$installed_path")"
-            [[ "$check_only" == true ]] || update_cfg "$cfg_file" "iso_hash=$iso_hash"
         fi
         debug "installed ${iso_hash:0:23}…"
         if [[ "$iso_hash" == "$algo:$want" ]]; then
             status_final "✓ up to date ($installed_file)"
-            [[ "$check_only" == true ]] || update_cfg "$cfg_file" "last_checked=$today"
+            [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
             return 0
         fi
     fi
@@ -271,8 +270,8 @@ process_item() {
     printf '%s\n' "$sum_text" > "$dir/$sum_name"
     [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
 
-    update_cfg "$cfg_file" "installed_file=$iso_name" "iso_hash=$algo:$want" \
-        "checksum_file=$sum_name" "last_checked=$today"
+    installed_file="$iso_name" iso_hash="$algo:$want" checksum_file="$sum_name"
+    save_update_metadata "$cfg_file"
     status_final "✓ updated to $iso_name"
 }
 
