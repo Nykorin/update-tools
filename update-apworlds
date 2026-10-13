@@ -117,7 +117,8 @@ main() {
             status "⬇ installing"
         fi
 
-        tmp_download=$(mktemp -p "$TMP_DIR" "download.XXXXXX")
+        # extract_member picks the unpacker by extension; every world is a zip
+        tmp_download=$(mktemp -p "$TMP_DIR" --suffix=.zip "download.XXXXXX")
 
         curl_takeover
         if ! curl -fL --progress-bar "$asset_url" -o "$tmp_download"; then
