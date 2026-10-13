@@ -13,7 +13,7 @@ PART_FILE=""
 # Names in a server's directory listing, folders with a trailing "/". Copes with
 # plain index pages and SourceForge (absolute links ending in "/download").
 list_dir() {
-    curl -fsL --max-time 60 "$1" | grep -oE 'href="[^"]+"' | awk '
+    curl -fsL "${CURL_META[@]}" "$1" | grep -oE 'href="[^"]+"' | awk '
         { h = substr($0, 7, length($0) - 7); sub(/[?#].*/, "", h); sub(/\/download$/, "", h)
           dir = (h ~ /\/$/); sub(/\/$/, "", h); n = split(h, p, "/"); name = p[n]
           if (name != "" && name != "." && name != "..") print name (dir ? "/" : "") }' | sort -u
@@ -86,9 +86,10 @@ hash_file() {
 }
 
 # Sets iso_url (what to download), iso_name and sum_url. Returns 1 to skip.
+# Sets nothing_newer=1 when dateprobe found no build past the installed one.
 resolve_iso() {
     local dir_url cand day today_s now sum c cur_date
-    iso_url="" iso_name="" sum_url=""
+    iso_url="" iso_name="" sum_url="" nothing_newer=0
     if [[ -z "${url:-}" || -z "${checksum:-}" ]]; then
         say "⚠ ${PROGRESS_LABEL:-}: cfg needs url and checksum, skipping"
         return 1
@@ -105,7 +106,7 @@ resolve_iso() {
             ;;
         static)
             # the name comes from where the URL lands (Garuda's latest.iso redirects)
-            iso_name=$(curl -fsIL --max-time 60 -o /dev/null -w '%{url_effective}' "$url") || {
+            iso_name=$(curl -fsIL "${CURL_META[@]}" -o /dev/null -w '%{url_effective}' "$url") || {
                 say "⚠ ${PROGRESS_LABEL:-}: could not reach $url, skipping"; return 1; }
             iso_name="${iso_name%%\?*}"; iso_name="${iso_name##*/}"
             iso_url="$url"
@@ -121,14 +122,19 @@ resolve_iso() {
                 [[ -n "${cur_date:-}" && "$today_s" < "$cur_date" ]] && break
                 cand="${url//\{date\}/$today_s}"
                 c="$checksum"; c="${c//\{iso\}/${cand##*/}}"
-                [[ "$c" == http* ]] || c="${cand%/*}/$c"
-                if curl -fsI --max-time 30 -o /dev/null "$c"; then
+                [[ "$c" == *://* ]] || c="${cand%/*}/$c"
+                if curl -fsI "${CURL_META[@]}" -o /dev/null "$c"; then
                     iso_url="$cand"; sum_url="$c"; break
                 fi
             done
             if [[ -z "$iso_url" ]]; then
                 if [[ -n "${cur_date:-}" ]]; then
-                    iso_url="${url//\{date\}/$cur_date}"   # nothing newer than what's installed
+                    # nothing newer; the installed build may already be gone from the
+                    # server, so don't ask for its checksum file
+                    nothing_newer=1
+                    iso_name="$current_file"
+                    debug "no build newer than $cur_date on the server"
+                    return 0
                 else
                     say "⚠ ${PROGRESS_LABEL:-}: no ${url##*/} found in the last ${probe_days:-90} days, skipping"
                     return 1
@@ -145,7 +151,7 @@ resolve_iso() {
 
     if [[ -z "$sum_url" ]]; then
         sum="$checksum"; sum="${sum//\{iso\}/$iso_name}"
-        [[ "$sum" == http* ]] || sum="$dir_url$sum"
+        [[ "$sum" == *://* ]] || sum="$dir_url$sum"
         if [[ "$sum" == *'*'* || "$sum" == *'['* ]]; then
             if ! sum=$(resolve_glob_url "$sum"); then
                 say "⚠ ${PROGRESS_LABEL:-}: no checksum file matches ${sum##*/}, skipping"
@@ -180,11 +186,20 @@ process_item() {
     fi
 
     resolve_iso || return 0
+    if (( nothing_newer )); then
+        if [[ -n "$local_path" ]]; then
+            status_final "✓ up to date ($current_file)"
+            [[ "$check_only" == true ]] || update_cfg "$cfg_file" "last_checked=$today"
+        else
+            say "⚠ $name: $current_file is missing and the server has nothing newer, skipping"
+        fi
+        return 0
+    fi
     debug "newest: $iso_name"
     debug "download URL: $iso_url"
     debug "checksum file: $sum_url"
 
-    if ! sum_text=$(curl -fsL --max-time 60 "$sum_url"); then
+    if ! sum_text=$(curl -fsL "${CURL_META[@]}" "$sum_url"); then
         say "⚠ $name: could not fetch checksum file $sum_url, skipping"
         return 0
     fi
@@ -215,7 +230,7 @@ process_item() {
         return 0
     fi
 
-    size=$(curl -fsIL --max-time 60 "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
+    size=$(curl -fsIL "${CURL_META[@]}" "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
     avail=$(df --output=avail -B1 "$dir" | tail -n 1)
     debug "size ${size:-unknown} bytes, $(( avail >> 20 )) MiB free"
     # keep 256 MiB spare; the old ISO stays until the new one verifies
@@ -232,7 +247,7 @@ process_item() {
     # hidden and not ending in .iso, so Ventoy never lists a partial download
     PART_FILE="$dir/.$iso_name.part"
     curl_takeover
-    if ! curl_run -fL --progress-bar "$iso_url" -o "$PART_FILE"; then
+    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$iso_url" -o "$PART_FILE"; then
         curl_abandon
         say "  ✗ Failed to download update for $name"
         rm -f "$PART_FILE"; PART_FILE=""
@@ -304,11 +319,16 @@ main() {
     trap '[[ -n "$PART_FILE" ]] && rm -f "$PART_FILE"' EXIT
 
     local -a cfg_files
-    mapfile -t cfg_files < <(find "$ISO_ROOT" -name '*.iso.cfg' -not -path '*/.*' | sort)
+    # skip hidden folders below the root only: the root's own path may contain one
+    mapfile -t cfg_files < <(find "$ISO_ROOT" -mindepth 1 -name '.*' -prune -o -type f -name '*.iso.cfg' -print | sort)
+    if (( ${#cfg_files[@]} == 0 )); then
+        say "⚠ no *.iso.cfg files under $ISO_ROOT, nothing to do"
+        return 0
+    fi
     init_progress "${#cfg_files[@]}"
 
     local i cfg_file dir name local_path sum_text algo want got size avail sum_name
-    local iso_url iso_name sum_url
+    local iso_url iso_name sum_url nothing_newer
 
     timed "total" run_items
 

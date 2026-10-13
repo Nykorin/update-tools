@@ -8,6 +8,17 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/progress.sh
 [[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
 
+# Staged files, global so the EXIT trap can remove them after a Ctrl+C.
+tmp_download="" tmp_extract_dir="" DESKTOP_TMP=""
+
+cleanup() {
+    rm -f "$GITHUB_HEADERS"
+    [[ -n "$tmp_download" ]] && rm -f "$tmp_download"
+    [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+    [[ -n "$DESKTOP_TMP" ]] && rm -rf "$DESKTOP_TMP"
+    return 0
+}
+
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
 ensure_desktop_entry() {
@@ -39,11 +50,12 @@ generate_desktop_entry() {
     local icon_dest="$ICONS_DIR/$app_name"
     local desktop_dest; desktop_dest=$(desktop_entry_path "$app_name")
     mkdir -p "$ICONS_DIR" "${desktop_dest%/*}"
-    local tmp_extract; tmp_extract=$(mktemp -d)
+    local tmp_extract; tmp_extract=$(mktemp -d -p "$STAGE_DIR")
+    DESKTOP_TMP="$tmp_extract"
 
     if ! (cd "$tmp_extract" && "$appimage_file" --appimage-extract &>/dev/null); then
         say "  ✗ Failed to extract AppImage contents for $app_name"
-        rm -rf "$tmp_extract"; return 1
+        rm -rf "$tmp_extract"; DESKTOP_TMP=""; return 1
     fi
 
     local squashfs_root="$tmp_extract/squashfs-root"
@@ -90,6 +102,7 @@ EOF
         say "  ⚠ No embedded .desktop found, generated minimal entry for $app_name"
     fi
     rm -rf "$tmp_extract"
+    DESKTOP_TMP=""
 }
 
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
@@ -120,8 +133,9 @@ process_item() {
         return 0
     fi
 
-    # -f asks GitHub for the full release list, not just "changed since?"
-    [[ "$force" == true ]] && etag=""
+    # -f asks GitHub for the full release list, not just "changed since?" (a static
+    # item's etag is the server's file ETag, which it still needs to compare)
+    [[ "$force" == true && "${manager:-}" == github ]] && etag=""
     if ! resolve_latest_asset; then
         return 0
     fi
@@ -134,11 +148,12 @@ process_item() {
     fi
 
     status "⬆ updating"
-    tmp_download=$(mktemp --suffix="-$asset_name")
+    # staged next to the AppImages (same disk, not RAM-backed /tmp): installing is a rename
+    tmp_download=$(mktemp -p "$STAGE_DIR" --suffix="-$asset_name")
 
     curl_takeover
     # -f: an HTTP error page must never replace a working AppImage
-    if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
+    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
         curl_abandon
         say "  ✗ Failed to download update for $app_name"
         rm -f "$tmp_download"
@@ -152,14 +167,14 @@ process_item() {
     tmp_extract_dir=""
     case "$asset_name" in
         *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
-            tmp_extract_dir=$(mktemp -d)
+            tmp_extract_dir=$(mktemp -d -p "$STAGE_DIR")
             if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
                 say "  ✗ Failed to extract archive for $app_name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
                 return 0
             fi
             new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
-            debug "archive holds ${new_appimage:+${new_appimage##*/}}${new_appimage:-no AppImage}"
+            debug "archive holds ${new_appimage:-no AppImage}"
             if [[ -z "$new_appimage" ]]; then
                 say "  ✗ No AppImage found inside extracted archive for $app_name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
@@ -170,7 +185,14 @@ process_item() {
 
     backup_file "$appimage_file"
     debug "previous version moved to $OLD_DIR/"
-    mv "$new_appimage" "$appimage_file"
+    # both moves are renames on one disk; should the second still fail, put the old one back
+    if ! mv "$new_appimage" "$appimage_file"; then
+        mv "$OLD_DIR/${appimage_file##*/}" "$appimage_file"
+        say "  ✗ $app_name: could not install the new AppImage, kept the old one"
+        rm -f "$tmp_download"
+        [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+        return 0
+    fi
     chmod +x "$appimage_file"
     rm -f "$tmp_download"
     [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
@@ -208,18 +230,26 @@ main() {
     OLD_DIR="$APPIMAGES_DIR/.old"
 
     require_cmds curl jq
+    STAGE_DIR="$APPIMAGES_DIR/.tmp"
     mkdir -p "$CFG_DIR" "$ICONS_DIR" "$OLD_DIR"
+    # anything left here is from an interrupted earlier run
+    rm -rf "$STAGE_DIR"
+    mkdir -p "$STAGE_DIR"
 
     GITHUB_HEADERS=$(mktemp)
-    trap 'rm -f "$GITHUB_HEADERS"' EXIT
+    trap cleanup EXIT
     load_github_token
 
     shopt -s nullglob
     local cfg_files=("$CFG_DIR"/*.appimage.cfg)
+    if (( ${#cfg_files[@]} == 0 )); then
+        say "⚠ no *.appimage.cfg files in $CFG_DIR, nothing to do"
+        return 0
+    fi
     init_progress "${#cfg_files[@]}"
 
     local i cfg_file app_name appimage_file
-    local tmp_download new_appimage tmp_extract_dir
+    local new_appimage
 
     timed "total" run_items
 

@@ -8,6 +8,15 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/progress.sh
 [[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
 
+# The staged download, global so the EXIT trap can remove it after a Ctrl+C.
+tmp_download=""
+
+cleanup() {
+    rm -f "$GITHUB_HEADERS"
+    [[ -n "$tmp_download" ]] && rm -f "$tmp_download"
+    return 0
+}
+
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"
     local entry base member extracted list
@@ -78,7 +87,7 @@ process_item() {
     fi
 
     # a 304 has no download URL, so ask for the full list when installing; -f always does
-    if [[ "$force" == true || -z "$installed_path" ]]; then
+    if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
         etag=""
         if [[ -n "$installed_path" ]]; then
             debug "full release list requested (-f)"
@@ -111,7 +120,7 @@ process_item() {
     tmp_download=$(mktemp -p "$TMP_DIR" --suffix=.zip "download.XXXXXX")
 
     curl_takeover
-    if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
+    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
         curl_abandon
         say "  ✗ Failed to download $world_name"
         rm -f "$tmp_download"
@@ -188,17 +197,23 @@ main() {
 
     require_cmds curl jq unzip
     mkdir -p "$CFG_DIR" "$OLD_DIR" "$TMP_DIR"
+    # left over from an interrupted earlier run
+    rm -f "$TMP_DIR"/download.* "$TMP_DIR"/extracted.*
 
     GITHUB_HEADERS=$(mktemp)
-    trap 'rm -f "$GITHUB_HEADERS"' EXIT
+    trap cleanup EXIT
     load_github_token
 
     shopt -s nullglob
     local cfg_files=("$CFG_DIR"/*.apworld.cfg)
+    if (( ${#cfg_files[@]} == 0 )); then
+        say "⚠ no *.apworld.cfg files in $CFG_DIR, nothing to do"
+        return 0
+    fi
     init_progress "${#cfg_files[@]}"
 
     local i rc cfg_file world_name installed_path
-    local tmp_download target target_name
+    local target target_name
     local -a top_dirs
 
     timed "total" run_items

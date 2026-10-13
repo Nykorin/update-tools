@@ -39,10 +39,19 @@ timed() {
     shift
     if (( ! DEBUG )); then "$@"; return; fi
     tf=$(mktemp)
-    local TIMEFORMAT='%2lR (user %2lU, sys %2lS)'
+    local TIMEFORMAT='%3R %3U %3S'
     { time "$@" 2>&3; } 3>&2 2>"$tf"
     rc=$?
-    read -r took < "$tf"
+    # bash 5.3 can print a rounding carry as ':' ("0.:0" for 1.00), so read each
+    # digit by its value instead of trusting the text
+    took=$(awk '
+        function sec(x,   i, n, v, p) {
+            n = index(x, "."); if (!n) return x + 0
+            v = substr(x, 1, n - 1) + 0; p = 1
+            for (i = n + 1; i <= length(x); i++) { p /= 10; v += (index("0123456789:", substr(x, i, 1)) - 1) * p }
+            return v }
+        function fmt(v) { return v >= 60 ? sprintf("%dm%.2fs", int(v / 60), v - 60 * int(v / 60)) : sprintf("%.2fs", v) }
+        { printf "%s (user %s, sys %s)", fmt(sec($1)), fmt(sec($2)), fmt(sec($3)) }' "$tf")
     rm -f "$tf"
     commit_final   # the item's result line first, then its time
     say "  · ${label:-${PROGRESS_LABEL:-}}: took $took"
@@ -52,6 +61,13 @@ timed() {
 # ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
+# A server that accepts the connection and then never answers would hang a run.
+# Small requests get a hard limit; downloads only fail when they stall, so a
+# big ISO on a slow line still finishes.
+CURL_META=(--connect-timeout 20 --max-time 120)
+# shellcheck disable=SC2034  # used by the updaters' download lines
+CURL_DL=(--connect-timeout 20 --speed-limit 1024 --speed-time 60)
+
 require_cmds() {
     local dep
     for dep in "$@"; do
@@ -72,17 +88,23 @@ backup_file() {
 # ---------------------------------------------------------------------------
 # Config handling
 # ---------------------------------------------------------------------------
+# Every key a cfg may hold. load_cfg sets only these: any other name could
+# overwrite one of the scripts' own variables (dir, name, HOME, PATH, ...).
+CFG_KEYS=(
+    manager repo repo_filename allow_prereleases repo_url
+    feed_url channel arch_key download_base url
+    content_length last_modified current_version
+    install_name apworld_filename installed_file last_checked
+    asset_digest etag
+    checksum checksum_save download_suffix probe_days
+    current_file iso_hash checksum_file
+)
+
 load_cfg() {
     local cfg_file="$1"
     local line key value
 
-    unset manager repo repo_filename allow_prereleases repo_url \
-          feed_url channel arch_key download_base url \
-          content_length last_modified current_version \
-          install_name apworld_filename installed_file last_checked \
-          asset_digest etag \
-          checksum checksum_save download_suffix probe_days \
-          current_file iso_hash checksum_file
+    unset "${CFG_KEYS[@]}"
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
@@ -95,9 +117,27 @@ load_cfg() {
                 value="${value%\"}"
                 value="${value//\\\"/\"}"
             fi
-            printf -v "$key" '%s' "$value"
+            if [[ " ${CFG_KEYS[*]} " == *" $key "* ]]; then
+                printf -v "$key" '%s' "$value"
+            else
+                say "⚠ ${PROGRESS_LABEL:-}: unknown key '$key' in ${cfg_file##*/}, ignored"
+            fi
         fi
     done < "$cfg_file"
+}
+
+# True if every named cfg key is set; otherwise says which are missing.
+# $1 = what needs them (e.g. "static manager"), rest = the keys.
+require_keys() {
+    local what="$1" key
+    local -a missing=()
+    shift
+    for key in "$@"; do
+        [[ -n "${!key:-}" ]] || missing+=("$key")
+    done
+    (( ${#missing[@]} == 0 )) && return 0
+    say "⚠ ${PROGRESS_LABEL:-}: $what needs ${missing[*]}, skipping"
+    return 1
 }
 
 update_cfg() {
@@ -153,13 +193,15 @@ GITHUB_REMAINING=""
 GITHUB_RESET=""
 GITHUB_ETAG=""
 GITHUB_LINK_NEXT=""
+GITHUB_MOVED=""
 GITHUB_RATE_LIMITED=0
 declare -A GITHUB_CACHE=() GITHUB_ETAGS=() GITHUB_NEXT=()
 
 # Prints the body, then the HTTP status code on its own last line.
-# $2 = optional ETag to send as If-None-Match.
+# $2 = optional ETag to send as If-None-Match. -L follows renamed or transferred
+# repos; GitHub redirects within api.github.com, so the token stays there.
 github_api() {
-    local -a args=(-s -w '\n%{http_code}' -D "$GITHUB_HEADERS")
+    local -a args=(-sL "${CURL_META[@]}" -w '\n%{http_code}' -D "$GITHUB_HEADERS")
     [[ -n "${2:-}" ]] && args+=(-H "If-None-Match: $2")
     : > "$GITHUB_HEADERS"
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then
@@ -191,6 +233,7 @@ github_releases() {
     code="${response##*$'\n'}"
     release_json="${response%$'\n'*}"
     debug "GitHub ${api_url#https://api.github.com/}${etag:+ (sent ETag)} → HTTP $code, ${GITHUB_REMAINING:-?} requests left"
+    [[ -n "$GITHUB_MOVED" ]] && debug "repo ${repo:-} has moved (redirected to $GITHUB_MOVED); consider updating repo= in the cfg"
     # GitHub doesn't count a 304 against the limit when the request carries a token
     if [[ "$code" == 304 && -n "${GITHUB_TOKEN:-}" ]]; then
         GITHUB_FREE=$((GITHUB_FREE + 1))
@@ -242,7 +285,7 @@ gitlab_releases() {
         return 1
     fi
 
-    response=$(curl -s -w '\n%{http_code}' "https://gitlab.com/api/v4/projects/$(urlencode "$project")/releases")
+    response=$(curl -sL "${CURL_META[@]}" -w '\n%{http_code}' "https://gitlab.com/api/v4/projects/$(urlencode "$project")/releases")
     code="${response##*$'\n'}"
     release_json="${response%$'\n'*}"
     debug "GitLab $project → HTTP $code"
@@ -262,7 +305,7 @@ gitlab_releases() {
 
 read_rate_headers() {
     local line value next_re='<([^>]*)>; rel="next"'
-    GITHUB_ETAG="" GITHUB_LINK_NEXT=""
+    GITHUB_ETAG="" GITHUB_LINK_NEXT="" GITHUB_MOVED=""
     while IFS= read -r line; do
         line="${line%$'\r'}"
         value="${line#*:}"; value="${value# }"
@@ -272,6 +315,7 @@ read_rate_headers() {
             x-ratelimit-reset:*)     GITHUB_RESET="$value" ;;
             etag:*)                  GITHUB_ETAG="$value" ;;
             link:*)                  [[ "$value" =~ $next_re ]] && GITHUB_LINK_NEXT="${BASH_REMATCH[1]}" ;;
+            location:*)              GITHUB_MOVED="$value" ;;
         esac
     done < "$GITHUB_HEADERS"
 }
@@ -355,11 +399,20 @@ extract_member() {
 # ---------------------------------------------------------------------------
 # GitHub / GitLab asset helpers
 # ---------------------------------------------------------------------------
+# A shell glob as an anchored regex: * and ? are wildcards, [...] stays a
+# character class, and every other regex character matches literally.
 glob_to_regex() {
-    local p="$1"
-    p="${p//./\\.}"
-    p="${p//\*/.*}"
-    printf '^%s$' "$p"
+    local p="$1" out="" ch i
+    for (( i = 0; i < ${#p}; i++ )); do
+        ch="${p:i:1}"
+        case "$ch" in
+            '*') out+='.*' ;;
+            '?') out+='.' ;;
+            '.'|"\\"|'^'|'$'|'+'|'('|')'|'{'|'}'|'|') out+="\\$ch" ;;
+            *)   out+="$ch" ;;
+        esac
+    done
+    printf '^%s$' "$out"
 }
 
 # Print "<tag>\t<url>\t<digest>" for the newest suitable release that has a
@@ -461,8 +514,10 @@ resolve_latest_asset() {
                 say "⚠ ${PROGRESS_LABEL:-}: gitlab manager needs repo_url and repo_filename, skipping"
                 return 1
             fi
-            local release_json
-            gitlab_releases "${repo_url#https://gitlab.com/}" || return
+            # accept the project's web address however it was copied
+            local release_json project="${repo_url#*://gitlab.com/}"
+            project="${project%/}"; project="${project%.git}"
+            gitlab_releases "$project" || return
             local result
             result=$(pick_gitlab_asset "$release_json" "$(glob_to_regex "$repo_filename")")
             # the link's own name: URLs often end in /download or carry ?job=…
@@ -471,8 +526,12 @@ resolve_latest_asset() {
             ;;
 
         jsonfeed)
+            require_keys "jsonfeed manager" feed_url channel arch_key download_base || return 1
             local feed_json
-            feed_json=$(curl -s "$feed_url")
+            if ! feed_json=$(curl -fsL "${CURL_META[@]}" "$feed_url"); then
+                say "⚠ ${PROGRESS_LABEL:-}: could not fetch $feed_url, skipping"
+                return 1
+            fi
             latest_tag=$(jq -r --arg ch "$channel" '.[$ch][0].version' <<<"$feed_json")
             asset_name=$(jq -r --arg ch "$channel" --arg arch "$arch_key" \
                 '.[$ch][0].appimage[] | select(.["build-id"] | test($arch)) | .filename' <<<"$feed_json")
@@ -481,24 +540,37 @@ resolve_latest_asset() {
                 say "⚠ ${PROGRESS_LABEL:-}: could not find AppImage asset for arch $arch_key"
                 return 1
             fi
-            [[ "$latest_tag" =~ ^([0-9]+\.[0-9]+) ]]
-            asset_url="${download_base//\{minor_version\}/${BASH_REMATCH[1]}}"
+            # {minor_version} is the version's first two parts (3.2 for 3.2.6)
+            if [[ "$download_base" == *"{minor_version}"* && ! "$latest_tag" =~ ^([0-9]+\.[0-9]+) ]]; then
+                say "⚠ ${PROGRESS_LABEL:-}: no minor version in feed version '$latest_tag', skipping"
+                return 1
+            fi
+            asset_url="${download_base//\{minor_version\}/${BASH_REMATCH[1]:-}}"
             asset_url="${asset_url//\{filename\}/$asset_name}"
             ;;
 
         static)
+            require_keys "static manager" url || return 1
             local curl_out headers
-            curl_out=$(curl -sIL -w '\n%{url_effective}' "$url")
+            # -f: a 404 or a timeout means there's nothing to compare, so skip the item
+            if ! curl_out=$(curl -fsIL "${CURL_META[@]}" -w '\n%{url_effective}' "$url"); then
+                say "⚠ ${PROGRESS_LABEL:-}: could not reach $url, skipping"
+                return 1
+            fi
             asset_url="${curl_out##*$'\n'}"
             headers="${curl_out%$'\n'*}"
 
             remote_length=$(awk 'tolower($0) ~ /content-length/{v=$2} END{gsub(/\r/,"",v); print v}' <<<"$headers")
             remote_modified=$(awk 'tolower($0) ~ /last-modified/{sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
+            # some servers send no size on HEAD; their ETag still tells a new file apart
+            remote_etag=$(awk 'tolower($1) == "etag:" {sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
 
             [[ -z "$asset_url" ]] && asset_url="$url"
             # redirects can land on signed URLs with a long query string
             asset_name="${asset_url%%\?*}"; asset_name="${asset_name##*/}"
-            latest_tag="static-$remote_length"
+            # shown as the version; without a size, the ETag (minus quotes) stands in
+            remote_etag="${remote_etag#W/}"
+            latest_tag="static-${remote_length:-${remote_etag//\"/}}"
             ;;
 
         *)
@@ -523,9 +595,18 @@ is_up_to_date() {
     local sum
     case "$manager" in
         static)
-            debug "size ${remote_length:-?} vs saved ${content_length:-none}, modified ${remote_modified:-?} vs saved ${last_modified:-none}"
-            [[ -n "$remote_length" && "$remote_length" == "${content_length:-}" && \
-               "$remote_modified" == "${last_modified:-}" ]]
+            debug "size ${remote_length:-?} vs saved ${content_length:-none}, modified ${remote_modified:-?} vs saved ${last_modified:-none}, ETag ${remote_etag:-none} vs saved ${etag:-none}"
+            if [[ -z "$remote_length$remote_modified$remote_etag" ]]; then
+                say "⚠ ${PROGRESS_LABEL:-}: the server gives no size, date or ETag, so it can't tell whether it changed; downloading again"
+                return 1
+            fi
+            # compare only what the server sent and the cfg has saved; with nothing to
+            # compare (a new cfg), it isn't up to date
+            local known=0 changed=0
+            [[ -n "$remote_length" && -n "${content_length:-}" ]] && { known=1; [[ "$remote_length" == "$content_length" ]] || changed=1; }
+            [[ -n "$remote_modified" && -n "${last_modified:-}" ]] && { known=1; [[ "$remote_modified" == "$last_modified" ]] || changed=1; }
+            [[ -n "$remote_etag" && -n "${etag:-}" ]] && { known=1; [[ "$remote_etag" == "$etag" ]] || changed=1; }
+            (( known && ! changed ))
             ;;
         github)
             (( remote_unchanged )) && return 0

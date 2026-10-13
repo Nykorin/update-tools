@@ -21,6 +21,21 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** Each per-item loop body is now a `process_item` function (called by `run_items`) so it can be timed; output without `-d` is unchanged *(Claude, directed by user)*
 
 ### Fixed
+- **common.sh:** `load_cfg` accepts only known keys and reports others; any `key=value` used to be set as a variable, so `dir=` in an ISO cfg moved where the ISO was installed *(Claude)*
+- **common.sh:** A static or jsonfeed cfg missing a required key, or a feed version without a dot, aborted the whole run (`unbound variable`); the item is now skipped with a named message *(Claude)*
+- **all scripts:** Network requests had no timeouts, so a server that never answered hung the run forever; requests now time out and downloads give up after 60 s of stalling *(Claude)*
+- **common.sh:** Renamed or transferred GitHub repos (HTTP 301) failed; redirects are now followed, and `-d` reports the move *(Claude)*
+- **common.sh:** A static item whose HEAD request failed (404, timeout) went on to a doomed download; it's now skipped *(Claude)*
+- **update-isos.sh:** A `-r` path containing a hidden folder found no cfgs and printed nothing; hidden folders are skipped only below the root *(Claude)*
+- **all scripts:** A run with no cfgs now says so instead of printing nothing *(Claude)*
+- **update-isos.sh:** Nobara (`dateprobe`) warned on every run once the installed build was removed from the server; nothing newer now means up to date *(Claude)*
+- **update-isos.sh:** An absolute `checksum` URL only counted as absolute if it started with `http` *(Claude)*
+- **update-appimages.sh:** Downloads went to RAM-backed `/tmp` and were copied across to `~/AppImages` after the old AppImage was already moved to `.old/`; they're now staged in `~/AppImages/.tmp/`, installed with a rename, and the old one is put back if that fails *(Claude)*
+- **update-appimages.sh, update-apworlds.sh:** Ctrl+C left staged downloads behind (in RAM for AppImages, in `.tmp/` for worlds); they're now removed on exit, and stale ones are cleared at start *(Claude)*
+- **common.sh:** A GitLab `repo_url` ending in `/` or `.git` gave a 404 *(Claude)*
+- **common.sh:** `repo_filename` only treated `*` and `.` specially, so `+ ( ) { } | ^ $` acted as regex; it's now a proper glob (`*`, `?`, `[…]`) *(Claude)*
+- **common.sh:** Static items on servers that send no `Content-Length` were never up to date and re-downloaded every run; their `ETag` is now compared too *(Claude)*
+- **common.sh:** Debug timings could show a broken digit (`0.:0` for 1.00) because of a rounding bug in bash 5.3's `time` output; the digits are now read by value *(Claude)*
 - **update-appimages.sh:** Downloads use `curl -f`; without it an HTTP error page (e.g. a 404) was saved as the AppImage, the working one was moved to `.old/`, and the run reported `✓ updated` *(Claude)*
 - **common.sh:** GitHub release lists past the first 100 releases are now fetched page by page, only while no matching asset has been found, so older assets in big repos can be found *(Claude, directed by user)*
 - **common.sh:** GitLab assets are named after the release link's `name` instead of the URL's last part, which was often `download` or carried a `?job=…` query string *(Claude)*
