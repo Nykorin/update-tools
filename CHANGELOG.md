@@ -10,6 +10,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ### Fixed
 - **update-appimages.sh:** Downloads use `curl -f`; without it an HTTP error page (e.g. a 404) was saved as the AppImage, the working one was moved to `.old/`, and the run reported `✓ updated` *(Claude)*
+- **common.sh:** GitHub release lists past the first 100 releases are now fetched page by page, only while no matching asset has been found, so older assets in big repos can be found *(Claude, directed by user)*
+- **common.sh:** GitLab assets are named after the release link's `name` instead of the URL's last part, which was often `download` or carried a `?job=…` query string *(Claude)*
+- **update-apworlds.sh:** When an `.apworld` has no single module folder, the fallback name is the extracted `.apworld`'s name for bundles (not the outer `.zip`), and `NAME.apworld` when the asset name doesn't end in `.apworld`; a world is never installed without the `.apworld` extension *(Claude)*
 
 ---
 

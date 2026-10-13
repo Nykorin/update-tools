@@ -47,7 +47,8 @@ unbundle_apworld() {
         say "  ✗ $world_name: extracted file is not a valid .apworld"
         return 1
     fi
-    status "📦 extracted ${member##*/}"
+    asset_name="${member##*/}"
+    status "📦 extracted $asset_name"
 }
 
 main() {
@@ -157,7 +158,9 @@ main() {
         elif (( ${#top_dirs[@]} == 1 )); then
             target_name="${top_dirs[0]}.apworld"
         else
+            # no single module folder to name it after; never install a non-.apworld name
             target_name="$asset_name"
+            [[ "${target_name,,}" == *.apworld ]] || target_name="$world_name.apworld"
         fi
 
         if (( ${#top_dirs[@]} != 1 )) || [[ "${target_name%.apworld}" != "${top_dirs[0]}" ]]; then

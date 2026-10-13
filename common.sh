@@ -119,8 +119,9 @@ GITHUB_LIMIT=""
 GITHUB_REMAINING=""
 GITHUB_RESET=""
 GITHUB_ETAG=""
+GITHUB_LINK_NEXT=""
 GITHUB_RATE_LIMITED=0
-declare -A GITHUB_CACHE=() GITHUB_ETAGS=()
+declare -A GITHUB_CACHE=() GITHUB_ETAGS=() GITHUB_NEXT=()
 
 # Prints the body, then the HTTP status code on its own last line.
 # $2 = optional ETag to send as If-None-Match.
@@ -167,6 +168,7 @@ github_releases() {
             remote_etag="$GITHUB_ETAG"
             GITHUB_CACHE[$api_url]="$release_json"
             GITHUB_ETAGS[$api_url]="$remote_etag"
+            GITHUB_NEXT[$api_url]="$GITHUB_LINK_NEXT"
             return 0
             ;;
         304)
@@ -223,8 +225,8 @@ gitlab_releases() {
 }
 
 read_rate_headers() {
-    local line value
-    GITHUB_ETAG=""
+    local line value next_re='<([^>]*)>; rel="next"'
+    GITHUB_ETAG="" GITHUB_LINK_NEXT=""
     while IFS= read -r line; do
         line="${line%$'\r'}"
         value="${line#*:}"; value="${value# }"
@@ -233,6 +235,7 @@ read_rate_headers() {
             x-ratelimit-remaining:*) GITHUB_REMAINING="$value" ;;
             x-ratelimit-reset:*)     GITHUB_RESET="$value" ;;
             etag:*)                  GITHUB_ETAG="$value" ;;
+            link:*)                  [[ "$value" =~ $next_re ]] && GITHUB_LINK_NEXT="${BASH_REMATCH[1]}" ;;
         esac
     done < "$GITHUB_HEADERS"
 }
@@ -349,7 +352,7 @@ pick_gitlab_asset() {
               | . as $r
               | ([ ($r.assets.links // [])[] | select(.name | test($pat)) ][0]) as $a
               | select($a != null)
-              | [$r.tag_name, ($a.direct_asset_url // $a.url)] ]
+              | [$r.tag_name, ($a.direct_asset_url // $a.url), $a.name] ]
             | (.[0] // empty) | @tsv
         end' <<<"$json" 2>/dev/null
 }
@@ -383,19 +386,33 @@ resolve_latest_asset() {
             fi
             (( rc )) && return "$rc"
 
-            local regex result
+            local regex result pre all_json page_url="$api_url" first_etag="$remote_etag"
             regex=$(glob_to_regex "$repo_filename")
 
             case "${allow_prereleases:-auto}" in
-                false) result=$(pick_github_asset "$release_json" "$regex" false) ;;
-                true)  result=$(pick_github_asset "$release_json" "$regex" true)  ;;
-                auto)  result=$(pick_github_asset "$release_json" "$regex" false)
-                       [[ -z "$result" ]] && result=$(pick_github_asset "$release_json" "$regex" true) ;;
+                false|auto) pre=false ;;
+                true)       pre=true ;;
                 *)
                     say "⚠ ${PROGRESS_LABEL:-}: allow_prereleases must be auto, false or true (got '${allow_prereleases}'), skipping"
                     return 1
                     ;;
             esac
+
+            # Older releases live on later pages (100 each); fetch them only while
+            # nothing matches. The ETag stays page 1's: any new release lands there.
+            all_json="$release_json"
+            result=$(pick_github_asset "$all_json" "$regex" "$pre")
+            while [[ -z "$result" && -n "${GITHUB_NEXT[$page_url]:-}" ]]; do
+                page_url="${GITHUB_NEXT[$page_url]}"
+                github_releases "$page_url" || return
+                all_json=$(jq -s 'add' <<<"$all_json$release_json")
+                result=$(pick_github_asset "$all_json" "$regex" "$pre")
+            done
+            remote_etag="$first_etag"
+            # auto: a stable release on any page beats a pre-release
+            if [[ -z "$result" && "${allow_prereleases:-auto}" == auto ]]; then
+                result=$(pick_github_asset "$all_json" "$regex" true)
+            fi
 
             IFS=$'\t' read -r latest_tag asset_url remote_digest <<<"$result"
             asset_name="${asset_url##*/}"
@@ -410,8 +427,9 @@ resolve_latest_asset() {
             gitlab_releases "${repo_url#https://gitlab.com/}" || return
             local result
             result=$(pick_gitlab_asset "$release_json" "$(glob_to_regex "$repo_filename")")
-            IFS=$'\t' read -r latest_tag asset_url <<<"$result"
-            asset_name="${asset_url##*/}"
+            # the link's own name: URLs often end in /download or carry ?job=…
+            IFS=$'\t' read -r latest_tag asset_url asset_name <<<"$result"
+            asset_name="${asset_name//\//_}"
             ;;
 
         jsonfeed)
