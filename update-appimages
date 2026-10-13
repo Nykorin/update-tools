@@ -163,7 +163,8 @@ main() {
         tmp_download=$(mktemp --suffix="-$asset_name")
 
         curl_takeover
-        if ! curl_run -L --progress-bar "$asset_url" -o "$tmp_download"; then
+        # -f: an HTTP error page must never replace a working AppImage
+        if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
             curl_abandon
             say "  ✗ Failed to download update for $app_name"
             rm -f "$tmp_download"
