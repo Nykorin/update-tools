@@ -141,12 +141,10 @@ process_item() {
     load_cfg "$cfg_file"
     debug "cfg: manager=${manager:-?} version=${current_version:-none} last_checked=${last_checked:-never}"
 
-    if [[ -n "${installed_file:-}" && -f "$APPIMAGES_DIR/$installed_file" ]]; then
-        appimage_file="$APPIMAGES_DIR/$installed_file"
-    else
-        # cfgs from before installed_file: the AppImage is named after the cfg
+    appimage_file=$(find_installed "$APPIMAGES_DIR")
+    # cfgs from before installed_file: the AppImage is named after the cfg
+    [[ -n "$appimage_file" ]] || \
         appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
-    fi
     if [[ -z "$appimage_file" ]]; then
         say "⚠ $app_name: no AppImage found, skipping"
         return 0

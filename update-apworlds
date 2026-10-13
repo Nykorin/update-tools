@@ -76,10 +76,7 @@ process_item() {
     load_cfg "$cfg_file"
     debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
 
-    installed_path=""
-    if [[ -n "${installed_file:-}" && -f "$WORLDS_DIR/$installed_file" ]]; then
-        installed_path="$WORLDS_DIR/$installed_file"
-    fi
+    installed_path=$(find_installed "$WORLDS_DIR")
 
     if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
         status_final "✓ already checked today (${current_version:-unknown})"

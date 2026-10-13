@@ -166,6 +166,13 @@ update_cfg() {
     done
 }
 
+# The file the cfg's installed_file names, if it's still in folder $1: prints its
+# full path, or nothing. Runs inside $(...), so it never prints a message.
+find_installed() {
+    [[ -n "${installed_file:-}" && -f "$1/$installed_file" ]] && printf '%s\n' "$1/$installed_file"
+    return 0
+}
+
 # Save the common metadata after a successful update/check.
 # Extra key=value pairs can be passed (e.g. installed_file=foo.apworld).
 save_update_metadata() {
