@@ -53,6 +53,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **common.sh:** GitHub lookups only saw a repo's 30 newest releases, so worlds in repos hosting several games (Zelda 2) could never be found; now 100 *(Claude, directed by user)*
 - **common.sh:** GitHub 404s, other HTTP errors and no-response are reported as such instead of "could not resolve download URL" *(Claude)*
 - **update-apworlds.sh:** The file list for a bundle with several `.apworld` files was printed into the live status block on a terminal, overwriting part of it; it now goes through `say` *(Claude)*
+- **progress.sh, both updaters:** A failed download no longer leaves a stray `NAME ⬆ updating` / `⬇ installing` line above curl's error; downloads run through the new `curl_run`, which counts the rows curl used (wrapped errors, trailing blank lines) so `curl_abandon` can delete that line *(Claude)*
 
 ---
 

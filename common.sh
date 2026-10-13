@@ -10,6 +10,7 @@ commit_final()   { :; }
 curl_takeover()  { :; }
 curl_handback()  { :; }
 curl_abandon()   { :; }
+curl_run()       { curl "$@"; }
 init_progress()  { :; }
 finish_progress(){ :; }
 block_redraw()   { :; }

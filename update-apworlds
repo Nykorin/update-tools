@@ -127,7 +127,7 @@ main() {
         tmp_download=$(mktemp -p "$TMP_DIR" --suffix=.zip "download.XXXXXX")
 
         curl_takeover
-        if ! curl -fL --progress-bar "$asset_url" -o "$tmp_download"; then
+        if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
             curl_abandon
             say "  ✗ Failed to download $world_name"
             rm -f "$tmp_download"

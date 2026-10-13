@@ -62,7 +62,38 @@ commit_final() {
 
 curl_takeover() { (( PROGRESS_ON )) && printf '\r\033[K'; return 0; }
 curl_handback()  { if (( PROGRESS_ON )); then printf '\033[1A'; block_redraw; fi; }
-curl_abandon()   { if (( PROGRESS_ON )); then BLOCK_DRAWN=0; printf '\r'; fi; }
+
+# A failed curl leaves its bar plus an error that can wrap or add a blank
+# line, so count the rows it used to find line 1 again. Copy goes to stdout,
+# where the block is.
+CURL_ROWS=0
+CURL_BLANK=0
+curl_run() {
+    (( PROGRESS_ON )) || { curl "$@"; return; }
+    local log rc
+    log=$(mktemp)
+    COLUMNS="$PROGRESS_COLS" curl "$@" 2>&1 | tee "$log"
+    rc=${PIPESTATUS[0]}
+    # rows = line breaks + wraps; only the text after the last \r is still on screen
+    read -r CURL_ROWS CURL_BLANK < <(awk -v cols="$PROGRESS_COLS" '
+        { sub(/\r+$/, ""); sub(/.*\r/, ""); n = length($0)
+          if (n) { wraps += int((n - 1) / cols); blank = 0 } else blank++ }
+        END { print NR + wraps, blank + 0 }' "$log")
+    [[ -n "$(tail -c1 "$log")" ]] && (( CURL_ROWS-- ))
+    rm -f "$log"
+    return "$rc"
+}
+
+# Delete line 1 (the stale status), keep curl's output minus its trailing
+# blank lines, and leave the cursor on a clean line below it.
+curl_abandon() {
+    (( PROGRESS_ON )) || return 0
+    local down=$(( CURL_ROWS - CURL_BLANK ))
+    printf '\r\033[%dA\033[M' "$(( CURL_ROWS + 1 ))"
+    (( down > 0 )) && printf '\033[%dB' "$down"
+    printf '\r\033[J'
+    BLOCK_DRAWN=0
+}
 
 init_progress() {
     local total="$1"
