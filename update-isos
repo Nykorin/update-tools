@@ -156,13 +156,129 @@ resolve_iso() {
     fi
 }
 
+# One cfg: check it, and update it if needed.
+process_item() {
+    local i="$1"
+    cfg_file="${cfg_files[$i]}"
+    dir="${cfg_file%/*}"
+    name="${cfg_file##*/}"
+    name="${name%.iso.cfg}"
+
+    PROGRESS_DONE=$i
+    PROGRESS_LABEL="$name"
+    STATUS=""
+    block_redraw
+
+    load_cfg "$cfg_file"
+    debug "cfg: manager=${manager:-?} current_file=${current_file:-none} last_checked=${last_checked:-never}"
+    local_path=""
+    [[ -n "${current_file:-}" && -f "$dir/$current_file" ]] && local_path="$dir/$current_file"
+
+    if [[ "$force" == false && -n "$local_path" && "${last_checked:-}" == "$today" ]]; then
+        status_final "✓ already checked today (${current_file})"
+        return 0
+    fi
+
+    resolve_iso || return 0
+    debug "newest: $iso_name"
+    debug "download URL: $iso_url"
+    debug "checksum file: $sum_url"
+
+    if ! sum_text=$(curl -fsL --max-time 60 "$sum_url"); then
+        say "⚠ $name: could not fetch checksum file $sum_url, skipping"
+        return 0
+    fi
+    read -r algo want <<<"$(checksum_for "$sum_text" "$iso_name")"
+    [[ -n "${want:-}" ]] && debug "expected $algo ${want:0:16}…"
+    if [[ -z "${want:-}" ]]; then
+        say "⚠ $name: $iso_name isn't listed in ${sum_url##*/}, skipping"
+        return 0
+    fi
+
+    if [[ -n "$local_path" ]]; then
+        # first run, or the checksum algorithm changed: hash the installed ISO once
+        if [[ "${iso_hash:-}" != "$algo:"* ]]; then
+            status "🔍 hashing $current_file"
+            iso_hash="$algo:$(hash_file "$algo" "$local_path")"
+            [[ "$check_only" == true ]] || update_cfg "$cfg_file" "iso_hash=$iso_hash"
+        fi
+        debug "installed ${iso_hash:0:23}…"
+        if [[ "$iso_hash" == "$algo:$want" ]]; then
+            status_final "✓ up to date ($current_file)"
+            [[ "$check_only" == true ]] || update_cfg "$cfg_file" "last_checked=$today"
+            return 0
+        fi
+    fi
+
+    if [[ "$check_only" == true ]]; then
+        status_final "⬆ update available: $iso_name"
+        return 0
+    fi
+
+    size=$(curl -fsIL --max-time 60 "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
+    avail=$(df --output=avail -B1 "$dir" | tail -n 1)
+    debug "size ${size:-unknown} bytes, $(( avail >> 20 )) MiB free"
+    # keep 256 MiB spare; the old ISO stays until the new one verifies
+    if [[ "$size" =~ ^[0-9]+$ ]] && (( size + 268435456 > avail )); then
+        say "⚠ $name: not enough space for $iso_name ($(( size >> 20 )) MiB + 256 MiB spare needed, $(( avail >> 20 )) MiB free), skipping"
+        return 0
+    fi
+
+    if [[ -n "$local_path" ]]; then
+        status "⬆ updating"
+    else
+        status "⬇ installing"
+    fi
+    # hidden and not ending in .iso, so Ventoy never lists a partial download
+    PART_FILE="$dir/.$iso_name.part"
+    curl_takeover
+    if ! curl_run -fL --progress-bar "$iso_url" -o "$PART_FILE"; then
+        curl_abandon
+        say "  ✗ Failed to download update for $name"
+        rm -f "$PART_FILE"; PART_FILE=""
+        return 0
+    fi
+    curl_handback
+
+    status "🔍 verifying $iso_name"
+    got=$(hash_file "$algo" "$PART_FILE")
+    debug "downloaded file's $algo: ${got:0:16}…"
+    if [[ "$got" != "$want" ]]; then
+        say "  ✗ $name: checksum mismatch for $iso_name, download deleted"
+        rm -f "$PART_FILE"; PART_FILE=""
+        return 0
+    fi
+    mv -f "$PART_FILE" "$dir/$iso_name"
+    PART_FILE=""
+    [[ -n "$local_path" && "$local_path" != "$dir/$iso_name" ]] && rm -f "$local_path"
+
+    sum_name="${checksum_save:-${sum_url##*/}}"
+    sum_name="${sum_name//\{iso\}/$iso_name}"
+    printf '%s\n' "$sum_text" > "$dir/$sum_name"
+    [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
+
+    update_cfg "$cfg_file" "current_file=$iso_name" "iso_hash=$algo:$want" \
+        "checksum_file=$sum_name" "last_checked=$today"
+    status_final "✓ updated to $iso_name"
+}
+
+# Walks every cfg; a function of its own so -d can time the whole run.
+run_items() {
+    for i in "${!cfg_files[@]}"; do
+        commit_final
+        timed "" process_item "$i"
+    done
+    return 0
+}
+
 main() {
     local force=false check_only=false
-    local usage="Usage: ${0##*/} [-f|--force] [-n|--check] [-r|--root DIR]"
+    local usage="Usage: ${0##*/} [-f|--force] [-n|--check] [-r|--root DIR] [-d|--debug]"
     while (( $# )); do
         case "$1" in
             -f|--force) force=true ;;
             -n|--check) check_only=true ;;
+            -d|--debug) DEBUG=1 ;;
             -r|--root)
                 [[ -n "${2:-}" ]] || { echo "$usage" >&2; exit 2; }
                 ISO_ROOT="$2"; shift ;;
@@ -194,102 +310,7 @@ main() {
     local i cfg_file dir name local_path sum_text algo want got size avail sum_name
     local iso_url iso_name sum_url
 
-    for i in "${!cfg_files[@]}"; do
-        commit_final
-        cfg_file="${cfg_files[$i]}"
-        dir="${cfg_file%/*}"
-        name="${cfg_file##*/}"
-        name="${name%.iso.cfg}"
-
-        PROGRESS_DONE=$i
-        PROGRESS_LABEL="$name"
-        STATUS=""
-        block_redraw
-
-        load_cfg "$cfg_file"
-        local_path=""
-        [[ -n "${current_file:-}" && -f "$dir/$current_file" ]] && local_path="$dir/$current_file"
-
-        if [[ "$force" == false && -n "$local_path" && "${last_checked:-}" == "$today" ]]; then
-            status_final "✓ already checked today (${current_file})"
-            continue
-        fi
-
-        resolve_iso || continue
-
-        if ! sum_text=$(curl -fsL --max-time 60 "$sum_url"); then
-            say "⚠ $name: could not fetch checksum file $sum_url, skipping"
-            continue
-        fi
-        read -r algo want <<<"$(checksum_for "$sum_text" "$iso_name")"
-        if [[ -z "${want:-}" ]]; then
-            say "⚠ $name: $iso_name isn't listed in ${sum_url##*/}, skipping"
-            continue
-        fi
-
-        if [[ -n "$local_path" ]]; then
-            # first run, or the checksum algorithm changed: hash the installed ISO once
-            if [[ "${iso_hash:-}" != "$algo:"* ]]; then
-                status "🔍 hashing $current_file"
-                iso_hash="$algo:$(hash_file "$algo" "$local_path")"
-                [[ "$check_only" == true ]] || update_cfg "$cfg_file" "iso_hash=$iso_hash"
-            fi
-            if [[ "$iso_hash" == "$algo:$want" ]]; then
-                status_final "✓ up to date ($current_file)"
-                [[ "$check_only" == true ]] || update_cfg "$cfg_file" "last_checked=$today"
-                continue
-            fi
-        fi
-
-        if [[ "$check_only" == true ]]; then
-            status_final "⬆ update available: $iso_name"
-            continue
-        fi
-
-        size=$(curl -fsIL --max-time 60 "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
-        avail=$(df --output=avail -B1 "$dir" | tail -n 1)
-        # keep 256 MiB spare; the old ISO stays until the new one verifies
-        if [[ "$size" =~ ^[0-9]+$ ]] && (( size + 268435456 > avail )); then
-            say "⚠ $name: not enough space for $iso_name ($(( size >> 20 )) MiB + 256 MiB spare needed, $(( avail >> 20 )) MiB free), skipping"
-            continue
-        fi
-
-        if [[ -n "$local_path" ]]; then
-            status "⬆ updating"
-        else
-            status "⬇ installing"
-        fi
-        # hidden and not ending in .iso, so Ventoy never lists a partial download
-        PART_FILE="$dir/.$iso_name.part"
-        curl_takeover
-        if ! curl_run -fL --progress-bar "$iso_url" -o "$PART_FILE"; then
-            curl_abandon
-            say "  ✗ Failed to download update for $name"
-            rm -f "$PART_FILE"; PART_FILE=""
-            continue
-        fi
-        curl_handback
-
-        status "🔍 verifying $iso_name"
-        got=$(hash_file "$algo" "$PART_FILE")
-        if [[ "$got" != "$want" ]]; then
-            say "  ✗ $name: checksum mismatch for $iso_name, download deleted"
-            rm -f "$PART_FILE"; PART_FILE=""
-            continue
-        fi
-        mv -f "$PART_FILE" "$dir/$iso_name"
-        PART_FILE=""
-        [[ -n "$local_path" && "$local_path" != "$dir/$iso_name" ]] && rm -f "$local_path"
-
-        sum_name="${checksum_save:-${sum_url##*/}}"
-        sum_name="${sum_name//\{iso\}/$iso_name}"
-        printf '%s\n' "$sum_text" > "$dir/$sum_name"
-        [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
-
-        update_cfg "$cfg_file" "current_file=$iso_name" "iso_hash=$algo:$want" \
-            "checksum_file=$sum_name" "last_checked=$today"
-        status_final "✓ updated to $iso_name"
-    done
+    timed "total" run_items
 
     finish_progress
 }

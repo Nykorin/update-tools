@@ -92,13 +92,113 @@ EOF
     rm -rf "$tmp_extract"
 }
 
-main() {
-    local force=false
-    case "${1:-}" in
-        "")           ;;
-        -f|--force)   force=true ;;
-        *)            echo "Usage: ${0##*/} [-f|--force]" >&2; exit 2 ;;
+# One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
+process_item() {
+    local i="$1"
+    cfg_file="${cfg_files[$i]}"
+    app_name="${cfg_file##*/}"
+    app_name="${app_name%.appimage.cfg}"
+
+    PROGRESS_DONE=$i
+    PROGRESS_LABEL="$app_name"
+    STATUS=""
+    block_redraw
+
+    load_cfg "$cfg_file"
+    debug "cfg: manager=${manager:-?} version=${current_version:-none} last_checked=${last_checked:-never}"
+
+    appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
+    if [[ -z "$appimage_file" ]]; then
+        say "⚠ $app_name: no AppImage found, skipping"
+        return 0
+    fi
+
+    debug "installed file: ${appimage_file##*/}"
+    if [[ "$force" == false && "${last_checked:-}" == "$today" ]]; then
+        status_final "✓ already checked today (${current_version:-unknown})"
+        ensure_desktop_entry "$app_name" "$appimage_file"
+        return 0
+    fi
+
+    # -f asks GitHub for the full release list, not just "changed since?"
+    [[ "$force" == true ]] && etag=""
+    if ! resolve_latest_asset; then
+        return 0
+    fi
+
+    if is_up_to_date "$appimage_file"; then
+        status_final "✓ up to date (${current_version:-$latest_tag})"
+        save_update_metadata "$cfg_file"
+        ensure_desktop_entry "$app_name" "$appimage_file"
+        return 0
+    fi
+
+    status "⬆ updating"
+    tmp_download=$(mktemp --suffix="-$asset_name")
+
+    curl_takeover
+    # -f: an HTTP error page must never replace a working AppImage
+    if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
+        curl_abandon
+        say "  ✗ Failed to download update for $app_name"
+        rm -f "$tmp_download"
+        return 0
+    fi
+    curl_handback
+    debug "downloaded to $tmp_download"
+
+    # Handle archived AppImages
+    new_appimage="$tmp_download"
+    tmp_extract_dir=""
+    case "$asset_name" in
+        *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
+            tmp_extract_dir=$(mktemp -d)
+            if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
+                say "  ✗ Failed to extract archive for $app_name"
+                rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
+                return 0
+            fi
+            new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
+            debug "archive holds ${new_appimage:+${new_appimage##*/}}${new_appimage:-no AppImage}"
+            if [[ -z "$new_appimage" ]]; then
+                say "  ✗ No AppImage found inside extracted archive for $app_name"
+                rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
+                return 0
+            fi
+            ;;
     esac
+
+    backup_file "$appimage_file"
+    debug "previous version moved to $OLD_DIR/"
+    mv "$new_appimage" "$appimage_file"
+    chmod +x "$appimage_file"
+    rm -f "$tmp_download"
+    [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+
+    generate_desktop_entry "$app_name" "$appimage_file"
+
+    save_update_metadata "$cfg_file"
+    status_final "✓ updated to $latest_tag"
+}
+
+# Walks every cfg; a function of its own so -d can time the whole run.
+run_items() {
+    for i in "${!cfg_files[@]}"; do
+        commit_final
+        timed "" process_item "$i" || { (( $? == 2 )) && break; }
+    done
+    return 0
+}
+
+main() {
+    local force=false arg
+    for arg in "$@"; do
+        case "$arg" in
+            -f|--force) force=true ;;
+            -d|--debug) DEBUG=1 ;;
+            *)          echo "Usage: ${0##*/} [-f|--force] [-d|--debug]" >&2; exit 2 ;;
+        esac
+    done
     local today
     today=$(date +%F)
 
@@ -121,88 +221,7 @@ main() {
     local i cfg_file app_name appimage_file
     local tmp_download new_appimage tmp_extract_dir
 
-    for i in "${!cfg_files[@]}"; do
-        commit_final
-        cfg_file="${cfg_files[$i]}"
-        app_name="${cfg_file##*/}"
-        app_name="${app_name%.appimage.cfg}"
-
-        PROGRESS_DONE=$i
-        PROGRESS_LABEL="$app_name"
-        STATUS=""
-        block_redraw
-
-        load_cfg "$cfg_file"
-
-        appimage_file=$(find "$APPIMAGES_DIR" -maxdepth 1 -iname "${app_name}.appimage" -type f -print -quit)
-        if [[ -z "$appimage_file" ]]; then
-            say "⚠ $app_name: no AppImage found, skipping"
-            continue
-        fi
-
-        if [[ "$force" == false && "${last_checked:-}" == "$today" ]]; then
-            status_final "✓ already checked today (${current_version:-unknown})"
-            ensure_desktop_entry "$app_name" "$appimage_file"
-            continue
-        fi
-
-        # -f asks GitHub for the full release list, not just "changed since?"
-        [[ "$force" == true ]] && etag=""
-        if ! resolve_latest_asset; then
-            continue
-        fi
-
-        if is_up_to_date "$appimage_file"; then
-            status_final "✓ up to date (${current_version:-$latest_tag})"
-            save_update_metadata "$cfg_file"
-            ensure_desktop_entry "$app_name" "$appimage_file"
-            continue
-        fi
-
-        status "⬆ updating"
-        tmp_download=$(mktemp --suffix="-$asset_name")
-
-        curl_takeover
-        # -f: an HTTP error page must never replace a working AppImage
-        if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
-            curl_abandon
-            say "  ✗ Failed to download update for $app_name"
-            rm -f "$tmp_download"
-            continue
-        fi
-        curl_handback
-
-        # Handle archived AppImages
-        new_appimage="$tmp_download"
-        tmp_extract_dir=""
-        case "$asset_name" in
-            *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
-                tmp_extract_dir=$(mktemp -d)
-                if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
-                    say "  ✗ Failed to extract archive for $app_name"
-                    rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
-                    continue
-                fi
-                new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
-                if [[ -z "$new_appimage" ]]; then
-                    say "  ✗ No AppImage found inside extracted archive for $app_name"
-                    rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
-                    continue
-                fi
-                ;;
-        esac
-
-        backup_file "$appimage_file"
-        mv "$new_appimage" "$appimage_file"
-        chmod +x "$appimage_file"
-        rm -f "$tmp_download"
-        [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
-
-        generate_desktop_entry "$app_name" "$appimage_file"
-
-        save_update_metadata "$cfg_file"
-        status_final "✓ updated to $latest_tag"
-    done
+    timed "total" run_items
 
     finish_progress
 }

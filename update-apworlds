@@ -48,16 +48,136 @@ unbundle_apworld() {
         return 1
     fi
     asset_name="${member##*/}"
+    debug "bundle member: $member"
     status "📦 extracted $asset_name"
 }
 
+# One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
+process_item() {
+    local i="$1"
+    cfg_file="${cfg_files[$i]}"
+    world_name="${cfg_file##*/}"
+    world_name="${world_name%.apworld.cfg}"
+
+    PROGRESS_DONE=$i
+    PROGRESS_LABEL="$world_name"
+    STATUS=""
+    block_redraw
+
+    load_cfg "$cfg_file"
+    debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
+
+    installed_path=""
+    if [[ -n "${installed_file:-}" && -f "$WORLDS_DIR/$installed_file" ]]; then
+        installed_path="$WORLDS_DIR/$installed_file"
+    fi
+
+    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
+        status_final "✓ already checked today (${current_version:-unknown})"
+        return 0
+    fi
+
+    # a 304 has no download URL, so ask for the full list when installing; -f always does
+    if [[ "$force" == true || -z "$installed_path" ]]; then
+        etag=""
+        if [[ -n "$installed_path" ]]; then
+            debug "full release list requested (-f)"
+        else
+            debug "full release list requested (not installed yet)"
+        fi
+    fi
+    resolve_latest_asset; rc=$?
+    if (( rc == 2 )); then
+        # every further GitHub request would fail the same way
+        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more world(s) not checked"
+        return 2
+    elif (( rc )); then
+        return 0
+    fi
+
+    if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
+        status_final "✓ up to date (${current_version:-$latest_tag})"
+        save_update_metadata "$cfg_file"
+        return 0
+    fi
+
+    if [[ -n "$installed_path" ]]; then
+        status "⬆ updating"
+    else
+        status "⬇ installing"
+    fi
+
+    # extract_member picks the unpacker by extension; every world is a zip
+    tmp_download=$(mktemp -p "$TMP_DIR" --suffix=.zip "download.XXXXXX")
+
+    curl_takeover
+    if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
+        curl_abandon
+        say "  ✗ Failed to download $world_name"
+        rm -f "$tmp_download"
+        return 0
+    fi
+    curl_handback
+    debug "downloaded to $tmp_download"
+
+    if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
+        say "  ✗ $world_name: download is not a valid .apworld (zip)"
+        rm -f "$tmp_download"
+        return 0
+    fi
+    if ! unbundle_apworld; then
+        rm -f "$tmp_download"
+        return 0
+    fi
+
+    mapfile -t top_dirs < <(awk -F/ 'NF>1 && $1!="" {print $1}' <<<"$zip_listing" | sort -u)
+
+    if [[ -n "${install_name:-}" ]]; then
+        target_name="$install_name"
+    elif (( ${#top_dirs[@]} == 1 )); then
+        target_name="${top_dirs[0]}.apworld"
+    else
+        # no single module folder to name it after; never install a non-.apworld name
+        target_name="$asset_name"
+        [[ "${target_name,,}" == *.apworld ]] || target_name="$world_name.apworld"
+    fi
+
+    debug "module folder(s): ${top_dirs[*]:-none}; installing as $target_name${install_name:+ (install_name)}"
+    if (( ${#top_dirs[@]} != 1 )) || [[ "${target_name%.apworld}" != "${top_dirs[0]}" ]]; then
+        say "  ⚠ $world_name: $target_name doesn't match module folder (${top_dirs[*]:-none})"
+    fi
+
+    target="$WORLDS_DIR/$target_name"
+    [[ -f "$target" ]] && backup_file "$target"
+    [[ -n "$installed_path" && "$installed_path" != "$target" && -f "$installed_path" ]] && \
+        backup_file "$installed_path"
+
+    mv "$tmp_download" "$target"
+    chmod 644 "$target"
+    [[ -n "$installed_path" && "$installed_path" != "$target" ]] && debug "replaced ${installed_path##*/}; old copies in $OLD_DIR/"
+
+    save_update_metadata "$cfg_file" "installed_file=$target_name"
+    status_final "✓ updated to $latest_tag ($target_name)"
+}
+
+# Walks every cfg; a function of its own so -d can time the whole run.
+run_items() {
+    for i in "${!cfg_files[@]}"; do
+        commit_final
+        timed "" process_item "$i" || { (( $? == 2 )) && break; }
+    done
+    return 0
+}
+
 main() {
-    local force=false
-    case "${1:-}" in
-        "")           ;;
-        -f|--force)   force=true ;;
-        *)            echo "Usage: ${0##*/} [-f|--force]" >&2; exit 2 ;;
-    esac
+    local force=false arg
+    for arg in "$@"; do
+        case "$arg" in
+            -f|--force) force=true ;;
+            -d|--debug) DEBUG=1 ;;
+            *)          echo "Usage: ${0##*/} [-f|--force] [-d|--debug]" >&2; exit 2 ;;
+        esac
+    done
     local today
     today=$(date +%F)
 
@@ -81,103 +201,7 @@ main() {
     local tmp_download target target_name
     local -a top_dirs
 
-    for i in "${!cfg_files[@]}"; do
-        commit_final
-        cfg_file="${cfg_files[$i]}"
-        world_name="${cfg_file##*/}"
-        world_name="${world_name%.apworld.cfg}"
-
-        PROGRESS_DONE=$i
-        PROGRESS_LABEL="$world_name"
-        STATUS=""
-        block_redraw
-
-        load_cfg "$cfg_file"
-
-        installed_path=""
-        if [[ -n "${installed_file:-}" && -f "$WORLDS_DIR/$installed_file" ]]; then
-            installed_path="$WORLDS_DIR/$installed_file"
-        fi
-
-        if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-            status_final "✓ already checked today (${current_version:-unknown})"
-            continue
-        fi
-
-        # a 304 has no download URL, so ask for the full list when installing; -f always does
-        if [[ "$force" == true || -z "$installed_path" ]]; then
-            etag=""
-        fi
-        resolve_latest_asset; rc=$?
-        if (( rc == 2 )); then
-            # every further GitHub request would fail the same way
-            say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more world(s) not checked"
-            break
-        elif (( rc )); then
-            continue
-        fi
-
-        if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
-            status_final "✓ up to date (${current_version:-$latest_tag})"
-            save_update_metadata "$cfg_file"
-            continue
-        fi
-
-        if [[ -n "$installed_path" ]]; then
-            status "⬆ updating"
-        else
-            status "⬇ installing"
-        fi
-
-        # extract_member picks the unpacker by extension; every world is a zip
-        tmp_download=$(mktemp -p "$TMP_DIR" --suffix=.zip "download.XXXXXX")
-
-        curl_takeover
-        if ! curl_run -fL --progress-bar "$asset_url" -o "$tmp_download"; then
-            curl_abandon
-            say "  ✗ Failed to download $world_name"
-            rm -f "$tmp_download"
-            continue
-        fi
-        curl_handback
-
-        if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
-            say "  ✗ $world_name: download is not a valid .apworld (zip)"
-            rm -f "$tmp_download"
-            continue
-        fi
-        if ! unbundle_apworld; then
-            rm -f "$tmp_download"
-            continue
-        fi
-
-        mapfile -t top_dirs < <(awk -F/ 'NF>1 && $1!="" {print $1}' <<<"$zip_listing" | sort -u)
-
-        if [[ -n "${install_name:-}" ]]; then
-            target_name="$install_name"
-        elif (( ${#top_dirs[@]} == 1 )); then
-            target_name="${top_dirs[0]}.apworld"
-        else
-            # no single module folder to name it after; never install a non-.apworld name
-            target_name="$asset_name"
-            [[ "${target_name,,}" == *.apworld ]] || target_name="$world_name.apworld"
-        fi
-
-        if (( ${#top_dirs[@]} != 1 )) || [[ "${target_name%.apworld}" != "${top_dirs[0]}" ]]; then
-            say "  ⚠ $world_name: $target_name doesn't match module folder (${top_dirs[*]:-none})"
-        fi
-
-        target="$WORLDS_DIR/$target_name"
-        [[ -f "$target" ]] && backup_file "$target"
-        [[ -n "$installed_path" && "$installed_path" != "$target" && -f "$installed_path" ]] && \
-            backup_file "$installed_path"
-
-        mv "$tmp_download" "$target"
-        chmod 644 "$target"
-
-        save_update_metadata "$cfg_file" "installed_file=$target_name"
-        status_final "✓ updated to $latest_tag ($target_name)"
-    done
+    timed "total" run_items
 
     finish_progress
 }

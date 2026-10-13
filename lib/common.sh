@@ -19,6 +19,37 @@ finish_progress(){ :; }
 block_redraw()   { :; }
 
 # ---------------------------------------------------------------------------
+# Debugging and timing (-d/--debug, or DEBUG=1)
+# ---------------------------------------------------------------------------
+case "${DEBUG:-0}" in 0|"") DEBUG=0 ;; *) DEBUG=1 ;; esac
+
+# A decision-trace line. It goes through say, so never call it inside $(...)
+# (it would be captured) or while curl owns line 2.
+debug() {
+    (( DEBUG )) || return 0
+    say "  · ${PROGRESS_LABEL:-}: $*"
+}
+
+# timed LABEL CMD...: run CMD in this shell; with -d, report how long it took,
+# measured with bash's time keyword. The report goes to a temp file so it can't
+# land in the status block; CMD's own stderr is untouched. An empty LABEL means
+# the item being handled.
+timed() {
+    local label="$1" rc tf took
+    shift
+    if (( ! DEBUG )); then "$@"; return; fi
+    tf=$(mktemp)
+    local TIMEFORMAT='%2lR (user %2lU, sys %2lS)'
+    { time "$@" 2>&3; } 3>&2 2>"$tf"
+    rc=$?
+    read -r took < "$tf"
+    rm -f "$tf"
+    commit_final   # the item's result line first, then its time
+    say "  · ${label:-${PROGRESS_LABEL:-}}: took $took"
+    return "$rc"
+}
+
+# ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
 require_cmds() {
@@ -147,6 +178,7 @@ github_releases() {
     if [[ -n "${GITHUB_CACHE[$api_url]+set}" ]]; then
         release_json="${GITHUB_CACHE[$api_url]}"
         remote_etag="${GITHUB_ETAGS[$api_url]}"
+        debug "GitHub ${api_url#https://api.github.com/}: from this run's cache"
         return 0
     fi
     if (( GITHUB_RATE_LIMITED )); then
@@ -158,6 +190,7 @@ github_releases() {
     read_rate_headers
     code="${response##*$'\n'}"
     release_json="${response%$'\n'*}"
+    debug "GitHub ${api_url#https://api.github.com/}${etag:+ (sent ETag)} → HTTP $code, ${GITHUB_REMAINING:-?} requests left"
     # GitHub doesn't count a 304 against the limit when the request carries a token
     if [[ "$code" == 304 && -n "${GITHUB_TOKEN:-}" ]]; then
         GITHUB_FREE=$((GITHUB_FREE + 1))
@@ -212,6 +245,7 @@ gitlab_releases() {
     response=$(curl -s -w '\n%{http_code}' "https://gitlab.com/api/v4/projects/$(urlencode "$project")/releases")
     code="${response##*$'\n'}"
     release_json="${response%$'\n'*}"
+    debug "GitLab $project → HTTP $code"
 
     case "$code" in
         200) return 0 ;;
@@ -384,6 +418,7 @@ resolve_latest_asset() {
             if (( rc == 3 )); then
                 # 304: the list is exactly what this item saw at its last check
                 latest_tag="${current_version:-}" remote_digest="${asset_digest:-}" remote_unchanged=1
+                debug "release list unchanged since the last check (304)"
                 return 0
             fi
             (( rc )) && return "$rc"
@@ -406,6 +441,7 @@ resolve_latest_asset() {
             result=$(pick_github_asset "$all_json" "$regex" "$pre")
             while [[ -z "$result" && -n "${GITHUB_NEXT[$page_url]:-}" ]]; do
                 page_url="${GITHUB_NEXT[$page_url]}"
+                debug "no match yet, fetching the next page of releases"
                 github_releases "$page_url" || return
                 all_json=$(jq -s 'add' <<<"$all_json$release_json")
                 result=$(pick_github_asset "$all_json" "$regex" "$pre")
@@ -475,6 +511,9 @@ resolve_latest_asset() {
         say "⚠ ${PROGRESS_LABEL:-}: could not resolve download URL, skipping"
         return 1
     fi
+    debug "latest ($manager): ${latest_tag:-?}, ${asset_name:-?}${remote_digest:+, ${remote_digest:0:23}…}"
+    debug "download URL: $asset_url"
+    [[ "$manager" == static ]] && debug "server says ${remote_length:-?} bytes, last modified ${remote_modified:-?}"
     return 0
 }
 
@@ -484,16 +523,20 @@ is_up_to_date() {
     local sum
     case "$manager" in
         static)
+            debug "size ${remote_length:-?} vs saved ${content_length:-none}, modified ${remote_modified:-?} vs saved ${last_modified:-none}"
             [[ -n "$remote_length" && "$remote_length" == "${content_length:-}" && \
                "$remote_modified" == "${last_modified:-}" ]]
             ;;
         github)
             (( remote_unchanged )) && return 0
+            debug "tag ${latest_tag:-?} vs installed ${current_version:-none}"
             [[ "$latest_tag" == "${current_version:-}" ]] || return 1
             # same tag, but rolling releases (latest, continuous) re-upload the asset
             if [[ -n "${asset_digest:-}" ]]; then
+                debug "same tag; asset digest ${remote_digest:0:23}… vs saved ${asset_digest:0:23}…"
                 [[ "$remote_digest" == "$asset_digest" ]]
             elif [[ "$remote_digest" == sha256:* ]]; then
+                debug "same tag, no saved digest: hashing the installed file once"
                 read -r sum _ < <(sha256sum "$1" 2>/dev/null)
                 [[ "sha256:${sum:-}" == "$remote_digest" ]]
             else
@@ -501,6 +544,7 @@ is_up_to_date() {
             fi
             ;;
         *)
+            debug "version ${latest_tag:-?} vs installed ${current_version:-none}"
             [[ "$latest_tag" == "${current_version:-}" ]]
             ;;
     esac
