@@ -31,6 +31,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-appimages.sh:** GitHub request-limit tracker: reads GitHub's `x-ratelimit-*` response headers (no extra requests) and shows requests left, reset time and requests used on the final line; first built in the monolithic script, later moved into `common.sh` *(Claude, directed by user; moved by Grok)*
 - **common.sh:** Each GitHub repo's release list is fetched once per run and shared by every world or app using that repo *(Claude, directed by user)*
 - **update-apworlds.sh:** A GitHub rate limit (429, or 403 mentioning "rate limit") stops the run; the AppImage script skips instead *(Claude, directed by user)*
+- **common.sh, both updaters:** GitHub conditional requests: each github cfg saves the release list's `etag`, and the next check sends it as `If-None-Match`; an unchanged list comes back as 304, which GitHub doesn't count against the limit when a token is used. `-f`, and worlds that still need installing, always fetch the full list *(Claude, directed by user)*
 
 ### Changed
 - **update-appimages.sh:** Rewritten as a thin script sourcing `common.sh` + optional `progress.sh` *(Grok)*
@@ -56,6 +57,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **progress.sh, both updaters:** A failed download no longer leaves a stray `NAME ⬆ updating` / `⬇ installing` line above curl's error; downloads run through the new `curl_run`, which counts the rows curl used (wrapped errors, trailing blank lines) so `curl_abandon` can delete that line *(Claude)*
 - **update-appimages.sh:** `generate_desktop_entry` creates `~/.local/share/applications` when it is missing, instead of failing with a raw bash error on a fresh HOME *(Claude)*
 - **common.sh:** GitLab API errors are reported (404, other HTTP errors, no response) instead of "could not resolve download URL"; a 429 skips the remaining GitLab items without further requests, while other managers carry on *(Claude)*
+- **common.sh, both updaters:** Rolling GitHub releases (`latest`, `continuous`, e.g. DuckStation) never updated, because only the tag was compared; the asset's sha256 digest is now saved as `asset_digest` and compared too. Cfgs without it are checked once against the installed file's sha256 *(Claude, directed by user)*
 
 ---
 

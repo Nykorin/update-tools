@@ -102,6 +102,11 @@ main() {
             continue
         fi
 
+        # a 304 has no download URL, so ask for the full list when installing; -f always does
+        if [[ "$force" == true || -z "$installed_path" ]]; then
+            # shellcheck disable=SC2034  # etag is read by resolve_latest_asset
+            etag=""
+        fi
         resolve_latest_asset; rc=$?
         if (( rc == 2 )); then
             # every further GitHub request would fail the same way
@@ -111,9 +116,9 @@ main() {
             continue
         fi
 
-        if [[ -n "$installed_path" ]] && is_up_to_date; then
+        if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
             status_final "✓ up to date (${current_version:-$latest_tag})"
-            update_cfg "$cfg_file" "last_checked=$today"
+            save_update_metadata "$cfg_file"
             continue
         fi
 

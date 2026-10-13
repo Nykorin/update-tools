@@ -145,13 +145,16 @@ main() {
             continue
         fi
 
+        # -f asks GitHub for the full release list, not just "changed since?"
+        # shellcheck disable=SC2034  # etag is read by resolve_latest_asset
+        [[ "$force" == true ]] && etag=""
         if ! resolve_latest_asset; then
             continue
         fi
 
-        if is_up_to_date; then
+        if is_up_to_date "$appimage_file"; then
             status_final "✓ up to date (${current_version:-$latest_tag})"
-            update_cfg "$cfg_file" "last_checked=$today"
+            save_update_metadata "$cfg_file"
             ensure_desktop_entry "$app_name" "$appimage_file"
             continue
         fi

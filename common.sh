@@ -45,7 +45,8 @@ load_cfg() {
     unset manager repo repo_filename allow_prereleases repo_url \
           feed_url channel arch_key download_base url \
           content_length last_modified current_version \
-          install_name apworld_filename installed_file last_checked
+          install_name apworld_filename installed_file last_checked \
+          asset_digest etag
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
@@ -94,19 +95,15 @@ update_cfg() {
 save_update_metadata() {
     local cfg="$1"
     shift
+    local -a pairs=("current_version=$latest_tag" "last_checked=$today")
     if [[ "$manager" == "static" ]]; then
-        update_cfg "$cfg" \
-            "current_version=$latest_tag" \
-            "last_checked=$today" \
-            "content_length=$remote_length" \
-            "last_modified=$remote_modified" \
-            "$@"
-    else
-        update_cfg "$cfg" \
-            "current_version=$latest_tag" \
-            "last_checked=$today" \
-            "$@"
+        pairs+=("content_length=$remote_length" "last_modified=$remote_modified")
     fi
+    # github: the asset digest catches re-uploads under the same tag; the ETag
+    # lets the next run ask "changed since?" for free
+    [[ -n "${remote_digest:-}" ]] && pairs+=("asset_digest=$remote_digest")
+    [[ -n "${remote_etag:-}" ]] && pairs+=("etag=$remote_etag")
+    update_cfg "$cfg" "${pairs[@]}" "$@"
 }
 
 # ---------------------------------------------------------------------------
@@ -114,29 +111,36 @@ save_update_metadata() {
 # ---------------------------------------------------------------------------
 GITHUB_HEADERS=""
 GITHUB_CALLS=0
+GITHUB_FREE=0
 GITHUB_LIMIT=""
 GITHUB_REMAINING=""
 GITHUB_RESET=""
+GITHUB_ETAG=""
 GITHUB_RATE_LIMITED=0
-declare -A GITHUB_CACHE=()
+declare -A GITHUB_CACHE=() GITHUB_ETAGS=()
 
 # Prints the body, then the HTTP status code on its own last line.
+# $2 = optional ETag to send as If-None-Match.
 github_api() {
+    local -a args=(-s -w '\n%{http_code}' -D "$GITHUB_HEADERS")
+    [[ -n "${2:-}" ]] && args+=(-H "If-None-Match: $2")
     : > "$GITHUB_HEADERS"
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        curl -s -w '\n%{http_code}' -D "$GITHUB_HEADERS" -H @- "$1" <<<"Authorization: Bearer $GITHUB_TOKEN"
+        curl "${args[@]}" -H @- "$1" <<<"Authorization: Bearer $GITHUB_TOKEN"
     else
-        curl -s -w '\n%{http_code}' -D "$GITHUB_HEADERS" "$1"
+        curl "${args[@]}" "$1"
     fi
 }
 
-# Sets release_json for $1, fetching each URL once per run. Call it directly,
-# never inside $(...), or the cache is lost with the subshell.
-# Returns 1 to skip this item, 2 when GitHub is rate limiting us.
+# Sets release_json and remote_etag for $1, fetching each URL once per run.
+# Call it directly, never inside $(...), or the cache is lost with the subshell.
+# $2 = the ETag this item saved last time; a 304 for it means nothing changed.
+# Returns 1 to skip this item, 2 when GitHub is rate limiting us, 3 if unchanged.
 github_releases() {
-    local api_url="$1" response code when=""
+    local api_url="$1" etag="${2:-}" response code when=""
     if [[ -n "${GITHUB_CACHE[$api_url]+set}" ]]; then
         release_json="${GITHUB_CACHE[$api_url]}"
+        remote_etag="${GITHUB_ETAGS[$api_url]}"
         return 0
     fi
     if (( GITHUB_RATE_LIMITED )); then
@@ -144,16 +148,27 @@ github_releases() {
         return 2
     fi
 
-    GITHUB_CALLS=$((GITHUB_CALLS + 1))
-    response=$(github_api "$api_url")
+    response=$(github_api "$api_url" "$etag")
     read_rate_headers
     code="${response##*$'\n'}"
     release_json="${response%$'\n'*}"
+    # GitHub doesn't count a 304 against the limit when the request carries a token
+    if [[ "$code" == 304 && -n "${GITHUB_TOKEN:-}" ]]; then
+        GITHUB_FREE=$((GITHUB_FREE + 1))
+    else
+        GITHUB_CALLS=$((GITHUB_CALLS + 1))
+    fi
 
     case "$code" in
         200)
+            remote_etag="$GITHUB_ETAG"
             GITHUB_CACHE[$api_url]="$release_json"
+            GITHUB_ETAGS[$api_url]="$remote_etag"
             return 0
+            ;;
+        304)
+            remote_etag="$etag"
+            return 3
             ;;
         429|403)
             if [[ "$code" == 429 || "${release_json,,}" == *"rate limit"* ]]; then
@@ -206,6 +221,7 @@ gitlab_releases() {
 
 read_rate_headers() {
     local line value
+    GITHUB_ETAG=""
     while IFS= read -r line; do
         line="${line%$'\r'}"
         value="${line#*:}"; value="${value# }"
@@ -213,13 +229,14 @@ read_rate_headers() {
             x-ratelimit-limit:*)     GITHUB_LIMIT="$value" ;;
             x-ratelimit-remaining:*) GITHUB_REMAINING="$value" ;;
             x-ratelimit-reset:*)     GITHUB_RESET="$value" ;;
+            etag:*)                  GITHUB_ETAG="$value" ;;
         esac
     done < "$GITHUB_HEADERS"
 }
 
 rate_summary() {
     STATUS=""
-    (( GITHUB_CALLS > 0 )) || return 0
+    (( GITHUB_CALLS + GITHUB_FREE > 0 )) || return 0
     [[ "$GITHUB_LIMIT" =~ ^[0-9]+$ && "$GITHUB_REMAINING" =~ ^[0-9]+$ ]] || return 0
     local warn="" when=""
     (( GITHUB_REMAINING * 10 <= GITHUB_LIMIT )) && warn="⚠ "
@@ -302,8 +319,9 @@ glob_to_regex() {
     printf '^%s$' "$p"
 }
 
-# Print "<tag>\t<url>" for the newest suitable release that has a matching asset.
-# $3 = true|false → whether pre-releases are eligible.
+# Print "<tag>\t<url>\t<digest>" for the newest suitable release that has a
+# matching asset. <digest> is GitHub's sha256, or "updated:<time>" for older
+# assets without one. $3 = true|false → whether pre-releases are eligible.
 pick_github_asset() {
     local json="$1" regex="$2" include_pre="$3"
     jq -r --arg pat "$regex" --argjson pre "$include_pre" '
@@ -314,7 +332,7 @@ pick_github_asset() {
               | . as $r
               | ([ $r.assets[] | select(.name | test($pat)) ][0]) as $a
               | select($a != null)
-              | [$r.tag_name, $a.browser_download_url] ]
+              | [$r.tag_name, $a.browser_download_url, ($a.digest // ($a.updated_at | if . then "updated:" + . else "" end))] ]
             | (.[0] // empty) | @tsv
         end' <<<"$json" 2>/dev/null
 }
@@ -335,10 +353,12 @@ pick_gitlab_asset() {
 # ---------------------------------------------------------------------------
 # Shared asset resolution
 # Sets: latest_tag  asset_url  asset_name  remote_length  remote_modified
+#       remote_digest  remote_etag  remote_unchanged (github only)
 # Returns 0 on success, 1 on failure, 2 if GitHub is rate limiting
 # ---------------------------------------------------------------------------
 resolve_latest_asset() {
     latest_tag="" asset_url="" asset_name="" remote_length="" remote_modified=""
+    remote_digest="" remote_etag="" remote_unchanged=0
 
     case "${manager:-}" in
         github)
@@ -350,8 +370,14 @@ resolve_latest_asset() {
             # Fetch the list, not /latest, to honour allow_prereleases=auto.
             # per_page=100: repos that host several games bury older ones past the default 30.
             local api_url="https://api.github.com/repos/${repo}/releases?per_page=100"
-            local release_json
-            github_releases "$api_url" || return
+            local release_json rc
+            github_releases "$api_url" "${etag:-}"; rc=$?
+            if (( rc == 3 )); then
+                # 304: the list is exactly what this item saw at its last check
+                latest_tag="${current_version:-}" remote_digest="${asset_digest:-}" remote_unchanged=1
+                return 0
+            fi
+            (( rc )) && return "$rc"
 
             local regex result
             regex=$(glob_to_regex "$repo_filename")
@@ -367,7 +393,7 @@ resolve_latest_asset() {
                     ;;
             esac
 
-            IFS=$'\t' read -r latest_tag asset_url <<<"$result"
+            IFS=$'\t' read -r latest_tag asset_url remote_digest <<<"$result"
             asset_name="${asset_url##*/}"
             ;;
 
@@ -428,12 +454,30 @@ resolve_latest_asset() {
     return 0
 }
 
-# Returns 0 if the item is already up to date
+# Returns 0 if the item is already up to date.
+# $1 = the installed file, hashed once for github cfgs saved before asset_digest.
 is_up_to_date() {
-    if [[ "$manager" == "static" ]]; then
-        [[ -n "$remote_length" && "$remote_length" == "${content_length:-}" && \
-           "$remote_modified" == "${last_modified:-}" ]]
-    else
-        [[ "$latest_tag" == "${current_version:-}" ]]
-    fi
+    local sum
+    case "$manager" in
+        static)
+            [[ -n "$remote_length" && "$remote_length" == "${content_length:-}" && \
+               "$remote_modified" == "${last_modified:-}" ]]
+            ;;
+        github)
+            (( remote_unchanged )) && return 0
+            [[ "$latest_tag" == "${current_version:-}" ]] || return 1
+            # same tag, but rolling releases (latest, continuous) re-upload the asset
+            if [[ -n "${asset_digest:-}" ]]; then
+                [[ "$remote_digest" == "$asset_digest" ]]
+            elif [[ "$remote_digest" == sha256:* ]]; then
+                read -r sum _ < <(sha256sum "$1" 2>/dev/null)
+                [[ "sha256:${sum:-}" == "$remote_digest" ]]
+            else
+                return 0  # no sha256 to compare; adopt the upload time from now on
+            fi
+            ;;
+        *)
+            [[ "$latest_tag" == "${current_version:-}" ]]
+            ;;
+    esac
 }
