@@ -9,6 +9,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-14]
 
 ### Added
+- **CLAUDE.md:** The project is a git repository; diffs and undo go through git, and commits happen only on request *(Claude, directed by user)*
 - **lib/update-tools:** One `main` and `run_items` for all three updaters, sourced like `common.sh`; each updater now only sets `ITEM_TYPE`, `ITEM_EXT`, `DEFAULT_DIR` and `NOT_FOUND_HINT` and defines `prepare_dir` (its other folders and leftover cleanup). Output is unchanged *(Claude, directed by user)*
 
 ### Changed
