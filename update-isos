@@ -36,16 +36,11 @@ checksum_for() {
         END { if (best) print (best == 128 ? "sha512" : "sha256"), tolower(h) }' <<<"$1"
 }
 
-hash_file() {
-    local sum
-    read -r sum _ < <("${1}sum" "$2" 2>/dev/null)
-    printf '%s\n' "${sum:-}"
-}
-
-# Sets sum_url, the checksum file for asset_name. A relative checksum is next to
-# the ISO; for static, next to the cfg's URL (Garuda's latest.iso.sha256 sits
-# beside latest.iso, not where it redirects). Returns 1 to skip.
-find_checksum_url() {
+# Fetches the checksum for asset_name: sets sum_url, sum_text, algo and want
+# (process_item's locals). A relative checksum is next to the ISO; for static, next
+# to the cfg's URL (Garuda's latest.iso.sha256 sits beside latest.iso, not where it
+# redirects). Returns 1 to skip the item.
+fetch_checksum() {
     local dir_url sum
     if [[ "$manager" == static ]]; then
         dir_url="${url%/*}/"
@@ -62,6 +57,18 @@ find_checksum_url() {
         fi
     fi
     sum_url="$sum"
+
+    debug "checksum file: $sum_url"
+    if ! sum_text=$(curl -fsL "${CURL_META[@]}" "$sum_url"); then
+        say "⚠ $name: could not fetch checksum file $sum_url, skipping"
+        return 1
+    fi
+    read -r algo want <<<"$(checksum_for "$sum_text" "$asset_name")"
+    if [[ -z "${want:-}" ]]; then
+        say "⚠ $name: $asset_name isn't listed in ${sum_url##*/}, skipping"
+        return 1
+    fi
+    debug "expected $algo ${want:0:16}…"
 }
 
 # One cfg: check it, and update it if needed.
@@ -127,38 +134,16 @@ process_item() {
         say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
         return 0
     fi
-    # nothing newer: the installed build may already be gone from the server, so
-    # don't ask for its checksum file
+    # nothing newer on the server (an old ISO's checksum file may be gone with it)
     if (( remote_unchanged )); then
-        status_final "✓ up to date (${latest_tag:-$installed_file})"
-        [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
+        report_up_to_date
         return 0
     fi
-    find_checksum_url || return 0
-    debug "checksum file: $sum_url"
-    if ! sum_text=$(curl -fsL "${CURL_META[@]}" "$sum_url"); then
-        say "⚠ $name: could not fetch checksum file $sum_url, skipping"
+    # ISOs are compared, and later verified, by checksum
+    fetch_checksum || return 0
+    if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
+        report_up_to_date
         return 0
-    fi
-    read -r algo want <<<"$(checksum_for "$sum_text" "$asset_name")"
-    [[ -n "${want:-}" ]] && debug "expected $algo ${want:0:16}…"
-    if [[ -z "${want:-}" ]]; then
-        say "⚠ $name: $asset_name isn't listed in ${sum_url##*/}, skipping"
-        return 0
-    fi
-
-    if [[ -n "$installed_path" ]]; then
-        # first run, or the checksum algorithm changed: hash the installed ISO once
-        if [[ "${iso_hash:-}" != "$algo:"* ]]; then
-            status "🔍 hashing $installed_file"
-            iso_hash="$algo:$(hash_file "$algo" "$installed_path")"
-        fi
-        debug "installed ${iso_hash:0:23}…"
-        if [[ "$iso_hash" == "$algo:$want" ]]; then
-            status_final "✓ up to date (${latest_tag:-$installed_file})"
-            [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
-            return 0
-        fi
     fi
 
     # -c: report it, download and write nothing

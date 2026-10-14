@@ -114,9 +114,13 @@ process_item() {
         say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
         return 0
     fi
+    # nothing newer on the server (an old ISO's checksum file may be gone with it)
+    if (( remote_unchanged )); then
+        report_up_to_date
+        return 0
+    fi
     if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
-        status_final "✓ up to date (${latest_tag:-$installed_file})"
-        [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
+        report_up_to_date
         return 0
     fi
 

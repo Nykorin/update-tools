@@ -894,11 +894,29 @@ pick_name() {
     debug "upstream name '$1' doesn't end in .$ext; installing as $new_name"
 }
 
+hash_file() {
+    local sum
+    read -r sum _ < <("${1}sum" "$2" 2>/dev/null)
+    printf '%s\n' "${sum:-}"
+}
+
 # Returns 0 if the item is already up to date.
-# $1 = the installed file, hashed once for github cfgs saved before asset_digest.
+# $1 = the installed file, hashed once for github cfgs saved before asset_digest,
+# and for ISOs without an iso_hash for the checksum's algorithm.
 is_up_to_date() {
     local sum
     (( remote_unchanged )) && return 0
+    # ISOs compare checksums whatever the manager; algo and want come from
+    # update-isos' fetch_checksum
+    if [[ "${ITEM_TYPE:-}" == iso ]]; then
+        if [[ "${iso_hash:-}" != "$algo:"* ]]; then
+            status "🔍 hashing ${1##*/}"
+            iso_hash="$algo:$(hash_file "$algo" "$1")"
+        fi
+        debug "installed ${iso_hash:0:23}… vs expected $algo ${want:0:16}…"
+        [[ "$iso_hash" == "$algo:$want" ]]
+        return
+    fi
     case "$manager" in
         static)
             debug "size ${remote_length:-?} vs saved ${content_length:-none}, modified ${remote_modified:-?} vs saved ${last_modified:-none}, ETag ${remote_etag:-none} vs saved ${etag:-none}"

@@ -56,6 +56,18 @@ before it replaces anything."
     esac
 }
 
+# The "up to date" result, the same for every updater: the version, then the cfg
+# saved (not with -c, which writes nothing); AppImages also refresh their desktop
+# entry.
+report_up_to_date() {
+    status_final "✓ up to date (${latest_tag:-$installed_file})"
+    [[ "$check_only" == true ]] && return 0
+    save_update_metadata "$cfg_file"
+    case "$ITEM_TYPE" in
+        app) ensure_desktop_entry "$name" "$installed_path" ;;
+    esac
+}
+
 # Walks every cfg; a function of its own so -d can time the whole run.
 run_items() {
     for i in "${!cfg_files[@]}"; do
