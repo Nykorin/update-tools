@@ -94,11 +94,14 @@ hash_file() {
     printf '%s\n' "${sum:-}"
 }
 
-# Sets iso_url (what to download), iso_name and sum_url. Returns 1 to skip.
+# Sets iso_url (what to download), iso_name and sum_url, and for static the
+# version and server details static_head finds. Returns 1 to skip.
 # Sets nothing_newer=1 when dateprobe found no build past the installed one.
 resolve_iso() {
     local dir_url cand day today_s now sum c cur_date
     iso_url="" iso_name="" sum_url="" nothing_newer=0
+    # only static sets these; clear the previous item's
+    latest_tag="" remote_length="" remote_modified="" remote_etag=""
     if [[ -z "${url:-}" || -z "${checksum:-}" ]]; then
         say "⚠ ${PROGRESS_LABEL:-}: cfg needs url and checksum, skipping"
         return 1
@@ -115,9 +118,8 @@ resolve_iso() {
             ;;
         static)
             # the name comes from where the URL lands (Garuda's latest.iso redirects)
-            iso_name=$(curl -fsIL "${CURL_META[@]}" -o /dev/null -w '%{url_effective}' "$url") || {
-                say "⚠ ${PROGRESS_LABEL:-}: could not reach $url, skipping"; return 1; }
-            iso_name="${iso_name%%\?*}"; iso_name="${iso_name##*/}"
+            static_head "$url" || return 1
+            iso_name="$asset_name"
             iso_url="$url"
             dir_url="${url%/*}/"
             ;;
@@ -203,7 +205,7 @@ process_item() {
     fi
 
     if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-        status_final "✓ already checked today (${installed_file})"
+        status_final "✓ already checked today (${current_version:-$installed_file})"
         return 0
     fi
 
@@ -242,7 +244,7 @@ process_item() {
         fi
         debug "installed ${iso_hash:0:23}…"
         if [[ "$iso_hash" == "$algo:$want" ]]; then
-            status_final "✓ up to date ($installed_file)"
+            status_final "✓ up to date (${latest_tag:-$installed_file})"
             [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
             return 0
         fi
@@ -250,7 +252,7 @@ process_item() {
 
     # -c: report it, download and write nothing
     if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: $iso_name"
+        status_final "⬆ update available: ${latest_tag:-$iso_name}"
         return 0
     fi
 
@@ -304,7 +306,7 @@ process_item() {
 
     installed_file="$iso_name" iso_hash="$algo:$want" checksum_file="$sum_name"
     save_update_metadata "$cfg_file"
-    status_final "✓ updated to $iso_name"
+    status_final "✓ updated to ${latest_tag:-$iso_name}"
 }
 
 # Fills in the shared help text in common.sh.

@@ -532,6 +532,37 @@ pick_gitlab_asset() {
         end' <<<"$json" 2>/dev/null
 }
 
+# The static manager's lookup, shared with update-isos: one HEAD request that
+# follows redirects. Sets asset_url (where it landed), asset_name, remote_length,
+# remote_modified, remote_etag, and latest_tag: static-SIZE-ETAG-NAME, leaving
+# out what the server didn't send (Beeper and LM Studio put the version in the
+# name, Mudlet only in the size). Returns 1 to skip the item.
+static_head() {
+    local url="$1" curl_out headers part
+    # -f: a 404 or a timeout means there's nothing to compare, so skip the item
+    if ! curl_out=$(curl -fsIL "${CURL_META[@]}" -w '\n%{url_effective}' "$url"); then
+        say "⚠ ${PROGRESS_LABEL:-}: could not reach $url, skipping"
+        return 1
+    fi
+    asset_url="${curl_out##*$'\n'}"
+    headers="${curl_out%$'\n'*}"
+
+    remote_length=$(awk 'tolower($0) ~ /content-length/{v=$2} END{gsub(/\r/,"",v); print v}' <<<"$headers")
+    remote_modified=$(awk 'tolower($0) ~ /last-modified/{sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
+    # some servers send no size on HEAD; their ETag still tells a new file apart
+    remote_etag=$(awk 'tolower($1) == "etag:" {sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
+    remote_etag="${remote_etag#W/}"
+
+    [[ -z "$asset_url" ]] && asset_url="$url"
+    # redirects can land on signed URLs with a long query string
+    asset_name="${asset_url%%\?*}"; asset_name="${asset_name##*/}"
+    latest_tag="static"
+    for part in "$remote_length" "${remote_etag//\"/}" "$asset_name"; do
+        [[ -n "$part" ]] && latest_tag+="-$part"
+    done
+    return 0
+}
+
 # ---------------------------------------------------------------------------
 # Shared asset resolution
 # Sets: latest_tag  asset_url  asset_name  remote_length  remote_modified
@@ -637,26 +668,7 @@ resolve_latest_asset() {
 
         static)
             require_keys "static manager" url || return 1
-            local curl_out headers
-            # -f: a 404 or a timeout means there's nothing to compare, so skip the item
-            if ! curl_out=$(curl -fsIL "${CURL_META[@]}" -w '\n%{url_effective}' "$url"); then
-                say "⚠ ${PROGRESS_LABEL:-}: could not reach $url, skipping"
-                return 1
-            fi
-            asset_url="${curl_out##*$'\n'}"
-            headers="${curl_out%$'\n'*}"
-
-            remote_length=$(awk 'tolower($0) ~ /content-length/{v=$2} END{gsub(/\r/,"",v); print v}' <<<"$headers")
-            remote_modified=$(awk 'tolower($0) ~ /last-modified/{sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
-            # some servers send no size on HEAD; their ETag still tells a new file apart
-            remote_etag=$(awk 'tolower($1) == "etag:" {sub(/^[^:]*:[ ]*/,""); v=$0} END{gsub(/\r/,"",v); print v}' <<<"$headers")
-
-            [[ -z "$asset_url" ]] && asset_url="$url"
-            # redirects can land on signed URLs with a long query string
-            asset_name="${asset_url%%\?*}"; asset_name="${asset_name##*/}"
-            # shown as the version; without a size, the ETag (minus quotes) stands in
-            remote_etag="${remote_etag#W/}"
-            latest_tag="static-${remote_length:-${remote_etag//\"/}}"
+            static_head "$url" || return 1
             ;;
 
         *)
