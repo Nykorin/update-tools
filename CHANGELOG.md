@@ -19,6 +19,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** In debug mode each item's time and the run's total are shown, measured with bash's `time` keyword *(Claude, directed by user)*
 
 ### Changed
+- **update-appimages.sh, update-apworlds.sh:** The item-name variable is `name` in all three updaters (was `app_name` and `world_name`) *(Claude, directed by user)*
 - **all scripts:** The staged download is `tmp_download` everywhere, each script's EXIT trap calls a `cleanup` function, and staged files use fixed names: `.tmp/download-ASSET` (plus `archive/` and `desktop/` folders) for AppImages, which renamed `STAGE_DIR` to `TMP_DIR`; `.tmp/download.zip` and `extracted.apworld` for worlds; `.NAME.iso.part` next to the ISO for ISOs, which renamed `PART_FILE` and now also removes `.iso.part` files left by a killed run at start. New AppImages are mode `755` instead of `711` *(Claude, directed by user)*
 - **all scripts:** The three `process_item` functions follow the same step order and spacing; `-d` gains matching "installed file" / "not installed yet" and "downloaded to" lines where a script lacked them *(Claude, directed by user)*
 - **update-isos.sh:** The check-only flag is now `-c`/`--check` (was `-n`), the same as in the other two *(Claude, directed by user)*

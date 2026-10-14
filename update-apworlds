@@ -32,19 +32,19 @@ unbundle_apworld() {
     done <<<"$zip_listing"
 
     if (( ${#matches[@]} == 0 )); then
-        say "  ✗ $world_name: no .apworld matching '$pattern' inside the release zip"
+        say "  ✗ $name: no .apworld matching '$pattern' inside the release zip"
         return 1
     elif (( ${#matches[@]} > 1 )); then
         # one say, so the list is printed above the status block, not into it
         printf -v list '\n      %s' "${matches[@]##*/}"
-        say "  ✗ $world_name: release zip holds several .apworld files, set apworld_filename:$list"
+        say "  ✗ $name: release zip holds several .apworld files, set apworld_filename:$list"
         return 1
     fi
 
     member="${matches[0]}"
     extracted="$TMP_DIR/extracted.apworld"
     if ! extract_member "$tmp_download" "$member" "$extracted"; then
-        say "  ✗ $world_name: could not extract $member"
+        say "  ✗ $name: could not extract $member"
         rm -f "$extracted"
         return 1
     fi
@@ -53,7 +53,7 @@ unbundle_apworld() {
     tmp_download="$extracted"
     # .apworld files are themselves zips
     if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
-        say "  ✗ $world_name: extracted file is not a valid .apworld"
+        say "  ✗ $name: extracted file is not a valid .apworld"
         return 1
     fi
     asset_name="${member##*/}"
@@ -65,11 +65,11 @@ unbundle_apworld() {
 process_item() {
     local i="$1"
     cfg_file="${cfg_files[$i]}"
-    world_name="${cfg_file##*/}"
-    world_name="${world_name%.apworld.cfg}"
+    name="${cfg_file##*/}"
+    name="${name%.apworld.cfg}"
 
     PROGRESS_DONE=$i
-    PROGRESS_LABEL="$world_name"
+    PROGRESS_LABEL="$name"
     STATUS=""
     block_redraw
 
@@ -130,7 +130,7 @@ process_item() {
     curl_takeover
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
         curl_abandon
-        say "  ✗ Failed to download $world_name"
+        say "  ✗ Failed to download $name"
         rm -f "$tmp_download"
         return 0
     fi
@@ -138,7 +138,7 @@ process_item() {
     debug "downloaded to $tmp_download"
 
     if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
-        say "  ✗ $world_name: download is not a valid .apworld (zip)"
+        say "  ✗ $name: download is not a valid .apworld (zip)"
         rm -f "$tmp_download"
         return 0
     fi
@@ -155,12 +155,12 @@ process_item() {
     else
         # no single module folder to name it after; never install a non-.apworld name
         target_name="$asset_name"
-        [[ "${target_name,,}" == *.apworld ]] || target_name="$world_name.apworld"
+        [[ "${target_name,,}" == *.apworld ]] || target_name="$name.apworld"
     fi
 
     debug "module folder(s): ${top_dirs[*]:-none}; installing as $target_name${install_name:+ (install_name)}"
     if (( ${#top_dirs[@]} != 1 )) || [[ "${target_name%.apworld}" != "${top_dirs[0]}" ]]; then
-        say "  ⚠ $world_name: $target_name doesn't match module folder (${top_dirs[*]:-none})"
+        say "  ⚠ $name: $target_name doesn't match module folder (${top_dirs[*]:-none})"
     fi
 
     target="$WORLDS_DIR/$target_name"
@@ -221,7 +221,7 @@ main() {
     fi
     init_progress "${#cfg_files[@]}"
 
-    local i rc cfg_file world_name installed_path
+    local i rc cfg_file name installed_path
     local target target_name
     local -a top_dirs
 

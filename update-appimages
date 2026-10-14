@@ -24,18 +24,18 @@ cleanup() {
 # file(s) wait in a pending folder until the new AppImage is in place, so a
 # failed install never costs the existing backup.
 stash_old() {
-    local pending="$OLD_DIR/.$app_name.pending"
+    local pending="$OLD_DIR/.$name.pending"
     rm -rf "$pending"
     mkdir -p "$pending"
     mv "$@" "$pending/"
 }
 keep_stash() {
-    rm -rf "${OLD_DIR:?}/$app_name"
-    mv "$OLD_DIR/.$app_name.pending" "$OLD_DIR/$app_name"
+    rm -rf "${OLD_DIR:?}/$name"
+    mv "$OLD_DIR/.$name.pending" "$OLD_DIR/$name"
 }
 # Put the stashed file(s) back where they were.
 unstash() {
-    local pending="$OLD_DIR/.$app_name.pending" f
+    local pending="$OLD_DIR/.$name.pending" f
     for f in "$pending"/*; do mv "$f" "$APPIMAGES_DIR/"; done
     rmdir "$pending"
 }
@@ -67,9 +67,9 @@ find_icon() {
 }
 
 generate_desktop_entry() {
-    local app_name="$1" appimage_file="$2"
-    local icon_dest="$ICONS_DIR/$app_name"
-    local desktop_dest; desktop_dest=$(desktop_entry_path "$app_name")
+    local name="$1" appimage_file="$2"
+    local icon_dest="$ICONS_DIR/$name"
+    local desktop_dest; desktop_dest=$(desktop_entry_path "$name")
     mkdir -p "$ICONS_DIR" "${desktop_dest%/*}"
     local tmp_extract="$TMP_DIR/desktop"
     rm -rf "$tmp_extract"
@@ -77,7 +77,7 @@ generate_desktop_entry() {
     DESKTOP_TMP="$tmp_extract"
 
     if ! (cd "$tmp_extract" && "$appimage_file" --appimage-extract &>/dev/null); then
-        say "  ✗ Failed to extract AppImage contents for $app_name"
+        say "  ✗ Failed to extract AppImage contents for $name"
         rm -rf "$tmp_extract"; DESKTOP_TMP=""; return 1
     fi
 
@@ -87,7 +87,7 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && \
         embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
-    if [[ -z "$(icon_exists "$ICONS_DIR" "$app_name")" ]]; then
+    if [[ -z "$(icon_exists "$ICONS_DIR" "$name")" ]]; then
         # tiers, in priority order, as "dir:maxdepth:sorted"
         local icon_src="" tier dir maxdepth sorted
         for tier in "$squashfs_root:1:" "$squashfs_root/usr/share/icons::sorted" "$squashfs_root::"; do
@@ -99,11 +99,11 @@ generate_desktop_entry() {
             cp "$icon_src" "${icon_dest}.${icon_src##*.}"
             status "🖼 icon extracted"
         else
-            say "  ⚠ No icon found for $app_name"
+            say "  ⚠ No icon found for $name"
         fi
     fi
 
-    local icon_path; icon_path=$(icon_exists "$ICONS_DIR" "$app_name")
+    local icon_path; icon_path=$(icon_exists "$ICONS_DIR" "$name")
 
     if [[ -n "$embedded_desktop" ]]; then
         sed -e "s|^Icon=.*|Icon=${icon_path:-}|" \
@@ -115,14 +115,14 @@ generate_desktop_entry() {
         cat > "$desktop_dest" <<EOF
 [Desktop Entry]
 Type=Application
-Name=$app_name
+Name=$name
 Icon=${icon_path:-}
 TryExec=$appimage_file
 Exec=env DESKTOPINTEGRATION=1 $appimage_file %f
 Categories=Utility;
-X-AppImage-Name=$app_name
+X-AppImage-Name=$name
 EOF
-        say "  ⚠ No embedded .desktop found, generated minimal entry for $app_name"
+        say "  ⚠ No embedded .desktop found, generated minimal entry for $name"
     fi
     rm -rf "$tmp_extract"
     DESKTOP_TMP=""
@@ -132,11 +132,11 @@ EOF
 process_item() {
     local i="$1"
     cfg_file="${cfg_files[$i]}"
-    app_name="${cfg_file##*/}"
-    app_name="${app_name%.appimage.cfg}"
+    name="${cfg_file##*/}"
+    name="${name%.appimage.cfg}"
 
     PROGRESS_DONE=$i
-    PROGRESS_LABEL="$app_name"
+    PROGRESS_LABEL="$name"
     STATUS=""
     block_redraw
 
@@ -152,7 +152,7 @@ process_item() {
 
     if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
         status_final "✓ already checked today (${current_version:-unknown})"
-        [[ "$check_only" == true ]] || ensure_desktop_entry "$app_name" "$installed_path"
+        [[ "$check_only" == true ]] || ensure_desktop_entry "$name" "$installed_path"
         return 0
     fi
 
@@ -171,7 +171,7 @@ process_item() {
         [[ "$check_only" == true ]] && return 0
         installed_file="${installed_path##*/}"
         save_update_metadata "$cfg_file"
-        ensure_desktop_entry "$app_name" "$installed_path"
+        ensure_desktop_entry "$name" "$installed_path"
         return 0
     fi
 
@@ -195,7 +195,7 @@ process_item() {
     # -f: an HTTP error page must never replace a working AppImage
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
         curl_abandon
-        say "  ✗ Failed to download update for $app_name"
+        say "  ✗ Failed to download update for $name"
         rm -f "$tmp_download"
         return 0
     fi
@@ -212,7 +212,7 @@ process_item() {
             rm -rf "$tmp_extract_dir"
             mkdir -p "$tmp_extract_dir"
             if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
-                say "  ✗ Failed to extract archive for $app_name"
+                say "  ✗ Failed to extract archive for $name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
                 return 0
             fi
@@ -220,7 +220,7 @@ process_item() {
             debug "archive holds ${new_appimage:-no AppImage}"
             new_name="${new_appimage##*/}"
             if [[ -z "$new_appimage" ]]; then
-                say "  ✗ No AppImage found inside extracted archive for $app_name"
+                say "  ✗ No AppImage found inside extracted archive for $name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
                 return 0
             fi
@@ -234,7 +234,7 @@ process_item() {
         if [[ -n "$installed_path" ]]; then
             new_name="${installed_path##*/}"
         else
-            new_name="$app_name.AppImage"
+            new_name="$name.AppImage"
         fi
     fi
 
@@ -248,21 +248,21 @@ process_item() {
     # all moves are renames on one disk; should the last still fail, put everything back
     if ! mv "$new_appimage" "$target"; then
         (( ${#aside[@]} )) && unstash
-        say "  ✗ $app_name: could not install the new AppImage, kept the old one"
+        say "  ✗ $name: could not install the new AppImage, kept the old one"
         rm -f "$tmp_download"
         [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
         return 0
     fi
     if (( ${#aside[@]} )); then
         keep_stash
-        debug "previous version moved to $OLD_DIR/$app_name/"
+        debug "previous version moved to $OLD_DIR/$name/"
     fi
     chmod +x "$target"
     rm -f "$tmp_download"
     [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
     debug "installed as $new_name"
 
-    generate_desktop_entry "$app_name" "$target"
+    generate_desktop_entry "$name" "$target"
 
     installed_file="$new_name"
     save_update_metadata "$cfg_file"
@@ -315,7 +315,7 @@ main() {
     fi
     init_progress "${#cfg_files[@]}"
 
-    local i cfg_file app_name installed_path
+    local i cfg_file name installed_path
     local new_appimage new_name
 
     timed "total" run_items
