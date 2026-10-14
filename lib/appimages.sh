@@ -1,9 +1,9 @@
 # shellcheck shell=bash disable=SC2154,SC2034
 # appimages.sh: the AppImage updater (archives, desktop entries and icons): its
-# prepare_dir and process_item, and their helpers. main.sh loads it for -m app,
-# in that mode's own subshell, so the function names don't clash with the other
-# modules. It reads (SC2154) and sets (SC2034) variables that main.sh and the
-# shared libraries own.
+# prepare_dir, the process_item hooks it needs, and their helpers. main.sh loads
+# it for -m app, in that mode's own subshell, so the function names don't clash
+# with the other modules. It reads (SC2154) and sets (SC2034) variables that
+# main.sh and the shared libraries own.
 
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
@@ -93,99 +93,9 @@ EOF
     DESKTOP_TMP=""
 }
 
-# One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
-process_item() {
-    local i="$1"
-    local rc new_file new_name target
-    cfg_file="${cfg_files[$i]}"
-    name="${cfg_file##*/}"
-    name="${name%".$ITEM_EXT.cfg"}"
-
-    PROGRESS_DONE=$i
-    PROGRESS_LABEL="$name"
-    STATUS=""
-    block_redraw
-
-    load_cfg "$cfg_file"
-    debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
-
-    installed_path=$(find_installed "$dir")
-    if [[ -n "$installed_path" ]]; then
-        debug "installed file: ${installed_path##*/}"
-    else
-        debug "not installed yet: installing it"
-    fi
-
-    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-        status_final "✓ already checked today (${current_version:-$installed_file})"
-        [[ "$check_only" == true ]] || ensure_desktop_entry "$name" "$installed_path"
-        return 0
-    fi
-
-    # a 304 has no download URL, so ask for the full list when installing; -f always does
-    # (a static item's etag is the server's file ETag, which it still needs to compare)
-    if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
-        etag=""
-        if [[ -n "$installed_path" ]]; then
-            debug "full release list requested (-f)"
-        else
-            debug "full release list requested (not installed yet)"
-        fi
-    fi
-    resolve_latest_asset; rc=$?
-    if (( rc == 2 )); then
-        # every further GitHub request would fail the same way
-        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more $ITEM_EXT(s) not checked"
-        return 2
-    elif (( rc )); then
-        return 0
-    fi
-
-    # nothing newer on the server, but the installed file is gone: nothing to download
-    if (( remote_unchanged )) && [[ -z "$installed_path" ]]; then
-        say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
-        return 0
-    fi
-    # nothing newer on the server (an old ISO's checksum file may be gone with it)
-    if (( remote_unchanged )); then
-        report_up_to_date
-        return 0
-    fi
-    if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
-        report_up_to_date
-        return 0
-    fi
-
-    # -c: report it, download and write nothing
-    if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: $(shown_version "$asset_name")"
-        return 0
-    fi
-
-    if [[ -n "$installed_path" ]]; then
-        status "⬆ updating"
-    else
-        status "⬇ installing"
-    fi
-
-    # staged next to the AppImages (same disk, not RAM-backed /tmp): installing is a rename
-    # the asset's name keeps an archive's extension, which decides how it's unpacked
-    tmp_download="$TMP_DIR/download-$asset_name"
-
-    curl_takeover
-    # -f: an HTTP error page must never replace a working AppImage
-    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
-        curl_abandon
-        say "  ✗ Failed to download update for $name"
-        rm -f "$tmp_download"
-        return 0
-    fi
-    curl_handback
-    debug "downloaded to $tmp_download"
-
-    # archived AppImages: extract, then install the AppImage inside
-    new_file="$tmp_download"
-    new_name="$asset_name"
+# Archived AppImages: extract, then install the AppImage inside (new_file, under
+# its own name). A plain AppImage keeps the defaults.
+item_validate() {
     tmp_extract_dir=""
     case "$asset_name" in
         *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
@@ -194,52 +104,23 @@ process_item() {
             mkdir -p "$tmp_extract_dir"
             if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
                 say "  ✗ Failed to extract archive for $name"
-                rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
-                return 0
+                return 1
             fi
             new_file=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
             debug "archive holds ${new_file:-no AppImage}"
-            new_name="${new_file##*/}"
             if [[ -z "$new_file" ]]; then
                 say "  ✗ No AppImage found inside extracted archive for $name"
-                rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
-                return 0
+                return 1
             fi
+            candidate="${new_file##*/}"
             ;;
     esac
-
-    pick_name "$new_name"
-    target="$dir/$new_name"
-
-    # the installed version (and a stray file already using the new name) waits in
-    # .tmp until the new one is in place
-    if ! set_aside "$installed_path" "$target"; then
-        say "  ✗ $name: could not move the old version aside, nothing changed"
-        rm -f "$tmp_download"
-        rm -rf "$tmp_extract_dir"
-        return 0
-    fi
-
-    # a rename on one disk; should it still fail, put the old version back
-    if ! mv -f "$new_file" "$target"; then
-        restore_previous
-        say "  ✗ $name: could not install ${target##*/}, kept the old one"
-        rm -f "$tmp_download"
-        rm -rf "$tmp_extract_dir"
-        return 0
-    fi
-    [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
-    rm -f "$tmp_download"
-    rm -rf "$tmp_extract_dir"
-    debug "installed as ${target##*/}"
-    drop_previous
-
-    generate_desktop_entry "$name" "$target"
-
-    installed_file="$new_name"
-    save_update_metadata "$cfg_file"
-    status_final "✓ updated to $(shown_version "$installed_file")"
 }
+
+item_extras() {
+    generate_desktop_entry "$name" "$target"
+}
+
 
 prepare_dir() {
     ICONS_DIR="$dir/.icons"

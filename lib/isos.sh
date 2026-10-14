@@ -1,9 +1,9 @@
 # shellcheck shell=bash disable=SC2154,SC2034
 # isos.sh: the ISO updater (checksums, free space, the folder= key): its
-# prepare_dir and process_item, and their helpers. main.sh loads it for -m iso,
-# in that mode's own subshell, so the function names don't clash with the other
-# modules. It reads (SC2154) and sets (SC2034) variables that main.sh and the
-# shared libraries own.
+# prepare_dir, the process_item hooks it needs, and their helpers. main.sh loads
+# it for -m iso, in that mode's own subshell, so the function names don't clash
+# with the other modules. It reads (SC2154) and sets (SC2034) variables that
+# main.sh and the shared libraries own.
 
 # "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines ("hash  name",
 # "hash *name", "hash  ./name") and BSD lines ("SHA256 (name) = hash"), matching
@@ -23,7 +23,7 @@ checksum_for() {
 }
 
 # Fetches the checksum for asset_name: sets sum_url, sum_text, algo and want
-# (process_item's locals). A relative checksum is next to the ISO; for static, next
+# (ITEM_LOCALS). A relative checksum is next to the ISO; for static, next
 # to the cfg's URL (Garuda's latest.iso.sha256 sits beside latest.iso, not where it
 # redirects). Returns 1 to skip the item.
 fetch_checksum() {
@@ -62,165 +62,68 @@ fetch_checksum() {
     debug "expected $algo ${want:0:16}…"
 }
 
-# One cfg: check it, and update it if needed.
-process_item() {
-    local i="$1"
-    local sum_text algo want got size avail sum_name
-    local rc sum_url new_file new_name target
-    cfg_file="${cfg_files[$i]}"
-    name="${cfg_file##*/}"
-    name="${name%".$ITEM_EXT.cfg"}"
+ITEM_LOCALS=(sum_text sum_url algo want got size avail sum_name)
 
-    PROGRESS_DONE=$i
-    PROGRESS_LABEL="$name"
-    STATUS=""
-    block_redraw
-
-    load_cfg "$cfg_file"
-    debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
+# folder= is relative to the root, so -r still works; it may not leave it. Every
+# ISO is verified, so checksum is required; the manager checks its own keys.
+item_setup() {
     debug "folder: ${folder:-none}"
-    # folder= is relative to the root, so -r still works; it may not leave it
     folder="${folder:-}"; folder="${folder%/}"
     if [[ -z "$folder" || "$folder" == /* || "/$folder/" == */../* ]]; then
         say "⚠ $name: folder must be a path inside $ISO_DIR, like Linux/Fedora/Fedora, skipping"
-        return 0
+        return 1
     fi
     dir="$ISO_DIR/$folder"
-    # every ISO is verified; the manager checks its own keys
-    require_keys "an ISO cfg" checksum || return 0
+    require_keys "an ISO cfg" checksum
+}
 
-    installed_path=$(find_installed "$dir")
-    if [[ -n "$installed_path" ]]; then
-        debug "installed file: ${installed_path##*/}"
-    else
-        debug "not installed yet: installing it"
-    fi
+# ISOs are compared, and later verified, by checksum
+item_prepare_check() {
+    fetch_checksum
+}
 
-    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-        status_final "✓ already checked today (${current_version:-$installed_file})"
-        return 0
-    fi
-
-    # a 304 has no download URL, so ask for the full list when installing; -f always does
-    # (a static item's etag is the server's file ETag, which it still needs to compare)
-    if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
-        etag=""
-        if [[ -n "$installed_path" ]]; then
-            debug "full release list requested (-f)"
-        else
-            debug "full release list requested (not installed yet)"
-        fi
-    fi
-    resolve_latest_asset; rc=$?
-    if (( rc == 2 )); then
-        # every further GitHub request would fail the same way
-        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more $ITEM_EXT(s) not checked"
-        return 2
-    elif (( rc )); then
-        return 0
-    fi
-
-    # nothing newer on the server, but the installed file is gone: nothing to download
-    if (( remote_unchanged )) && [[ -z "$installed_path" ]]; then
-        say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
-        return 0
-    fi
-    # nothing newer on the server (an old ISO's checksum file may be gone with it)
-    if (( remote_unchanged )); then
-        report_up_to_date
-        return 0
-    fi
-    # ISOs are compared, and later verified, by checksum
-    fetch_checksum || return 0
-    if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
-        report_up_to_date
-        return 0
-    fi
-
-    # -c: report it, download and write nothing
-    if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: $(shown_version "$asset_name")"
-        return 0
-    fi
-
+# keep 256 MiB spare; the old ISO stays until the new one verifies
+item_preflight() {
     mkdir -p "$dir"
     # static already has the size from its lookup
     size="${remote_length:-}"
     [[ -n "$size" ]] || size=$(curl -fsIL "${CURL_META[@]}" "$asset_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
     avail=$(df --output=avail -B1 "$dir" | tail -n 1)
     debug "size ${size:-unknown} bytes, $(( avail >> 20 )) MiB free"
-    # keep 256 MiB spare; the old ISO stays until the new one verifies
     if [[ "$size" =~ ^[0-9]+$ ]] && (( size + 268435456 > avail )); then
         say "⚠ $name: not enough space for $asset_name ($(( size >> 20 )) MiB + 256 MiB spare needed, $(( avail >> 20 )) MiB free), skipping"
-        return 0
+        return 1
     fi
+}
 
-    if [[ -n "$installed_path" ]]; then
-        status "⬆ updating"
-    else
-        status "⬇ installing"
-    fi
-
-    # next to the ISO (same filesystem, so installing is a rename), hidden and not
-    # ending in .iso so Ventoy never lists a partial download
+# next to the ISO (same filesystem, so installing is a rename), hidden and not
+# ending in .iso so Ventoy never lists a partial download
+item_stage() {
     tmp_download="$dir/.$asset_name.part"
+}
 
-    curl_takeover
-    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
-        curl_abandon
-        say "  ✗ Failed to download update for $name"
-        rm -f "$tmp_download"
-        return 0
-    fi
-    curl_handback
-    debug "downloaded to $tmp_download"
-
+# The checksum was looked up under the upstream name, which the install name
+# (pick_name) may differ from.
+item_validate() {
     status "🔍 verifying $asset_name"
     got=$(hash_file "$algo" "$tmp_download")
     debug "downloaded file's $algo: ${got:0:16}…"
     if [[ "$got" != "$want" ]]; then
         say "  ✗ $name: checksum mismatch for $asset_name, download deleted"
-        rm -f "$tmp_download"
-        return 0
+        return 1
     fi
     iso_hash="$algo:$want"
+}
 
-    # the checksum was looked up under the upstream name; this is only where it lands
-    pick_name "$asset_name"
-    target="$dir/$new_name"
-
-    new_file="$tmp_download"
-    # the installed version (and a stray file already using the new name) waits in
-    # .tmp until the new one is in place
-    if ! set_aside "$installed_path" "$target"; then
-        say "  ✗ $name: could not move the old version aside, nothing changed"
-        rm -f "$tmp_download"
-        return 0
-    fi
-
-    # a rename on one disk; should it still fail, put the old version back
-    if ! mv -f "$new_file" "$target"; then
-        restore_previous
-        say "  ✗ $name: could not install ${target##*/}, kept the old one"
-        rm -f "$tmp_download"
-        return 0
-    fi
-    [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
-    rm -f "$tmp_download"
-    debug "installed as ${target##*/}"
-    drop_previous
-
+# the upstream checksum file next to the ISO; the old one goes once it's saved
+item_extras() {
     sum_name="${checksum_save:-${sum_url##*/}}"
     sum_name="${sum_name//\{iso\}/$asset_name}"
     printf '%s\n' "$sum_text" > "$dir/$sum_name"
-    # the old checksum file goes once the new one is saved
     [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
     checksum_file="$sum_name"
-
-    installed_file="$new_name"
-    save_update_metadata "$cfg_file"
-    status_final "✓ updated to $(shown_version "$installed_file")"
 }
+
 
 prepare_dir() {
     # process_item points dir at each ISO's folder, so keep the root

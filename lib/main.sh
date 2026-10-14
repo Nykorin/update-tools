@@ -1,9 +1,10 @@
-# shellcheck shell=bash
+# shellcheck shell=bash disable=SC2154
 # main.sh: what update-tools runs. update_tools parses the flags and runs each
 # mode in its own subshell (run_mode), which loads that mode's module
-# (appimages.sh, apworlds.sh or isos.sh: prepare_dir and process_item) and walks
-# its cfgs. A subshell per mode keeps one mode's variables, traps and failures
-# out of the next one under -m all.
+# (appimages.sh, apworlds.sh or isos.sh: prepare_dir and the hooks) and walks
+# its cfgs with the one process_item. A subshell per mode keeps one mode's variables, traps and failures
+# out of the next one under -m all. Variables the managers and cfgs set (SC2154)
+# aren't visible to shellcheck here.
 
 # Each mode's settings, by ITEM_TYPE: ITEM_TITLE (its heading under -m all),
 # ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg), ITEM_MODE (for installed files;
@@ -78,6 +79,159 @@ run_items() {
         timed "" process_item "$i" || { (( $? == 2 )) && break; }
     done
     return 0
+}
+
+# Hooks a module may define, for the steps where the modes really differ; these
+# defaults do nothing (item_stage: AppImages' staging). A hook that returns 1 has
+# said why and skips the item. ITEM_LOCALS names the variables a module's hooks
+# share, made local to each item.
+ITEM_LOCALS=()
+item_setup()         { :; }   # after load_cfg (ISOs: folder= and checksum)
+item_prepare_check() { :; }   # before is_up_to_date (ISOs: fetch the checksum)
+item_preflight()     { :; }   # before downloading (ISOs: free space)
+# the staged download: next to the items (same disk, not RAM-backed /tmp), so
+# installing is a rename; the asset's name keeps an archive's extension
+item_stage()         { tmp_download="$TMP_DIR/download-$asset_name"; }
+item_validate()      { :; }   # after downloading; may set new_file and candidate
+item_extras()        { :; }   # after installing (AppImages: desktop entry; ISOs: checksum file)
+
+# One cfg: check it, and update it if needed. The same steps for every mode, with
+# the module's hooks where they differ. Returns 2 to stop the whole run.
+process_item() {
+    local i="$1"
+    local rc new_file new_name candidate target
+    (( ${#ITEM_LOCALS[@]} )) && local "${ITEM_LOCALS[@]}"
+    cfg_file="${cfg_files[$i]}"
+    name="${cfg_file##*/}"
+    name="${name%".$ITEM_EXT.cfg"}"
+
+    PROGRESS_DONE=$i
+    PROGRESS_LABEL="$name"
+    STATUS=""
+    block_redraw
+
+    load_cfg "$cfg_file"
+    debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
+    item_setup || return 0
+
+    installed_path=$(find_installed "$dir")
+    if [[ -n "$installed_path" ]]; then
+        debug "installed file: ${installed_path##*/}"
+    else
+        debug "not installed yet: installing it"
+    fi
+
+    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
+        status_final "✓ already checked today (${current_version:-$installed_file})"
+        case "$ITEM_TYPE" in
+            app) [[ "$check_only" == true ]] || ensure_desktop_entry "$name" "$installed_path" ;;
+        esac
+        return 0
+    fi
+
+    # a 304 has no download URL, so ask for the full list when installing; -f always does
+    # (a static item's etag is the server's file ETag, which it still needs to compare)
+    if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
+        etag=""
+        if [[ -n "$installed_path" ]]; then
+            debug "full release list requested (-f)"
+        else
+            debug "full release list requested (not installed yet)"
+        fi
+    fi
+    resolve_latest_asset; rc=$?
+    if (( rc == 2 )); then
+        # every further GitHub request would fail the same way
+        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more $ITEM_EXT(s) not checked"
+        return 2
+    elif (( rc )); then
+        return 0
+    fi
+
+    # nothing newer on the server, but the installed file is gone: nothing to download
+    if (( remote_unchanged )) && [[ -z "$installed_path" ]]; then
+        say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
+        return 0
+    fi
+    # nothing newer on the server (an old ISO's checksum file may be gone with it)
+    if (( remote_unchanged )); then
+        report_up_to_date
+        return 0
+    fi
+    item_prepare_check || return 0
+    if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
+        report_up_to_date
+        return 0
+    fi
+
+    # -c: report it, download and write nothing
+    if [[ "$check_only" == true ]]; then
+        status_final "⬆ update available: $(shown_version "$asset_name")"
+        return 0
+    fi
+
+    item_preflight || return 0
+
+    if [[ -n "$installed_path" ]]; then
+        status "⬆ updating"
+    else
+        status "⬇ installing"
+    fi
+
+    item_stage
+
+    curl_takeover
+    # -f: an HTTP error page must never replace a working item
+    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
+        curl_abandon
+        say "  ✗ Failed to download update for $name"
+        rm -f "$tmp_download"
+        return 0
+    fi
+    curl_handback
+    debug "downloaded to $tmp_download"
+
+    new_file="" candidate=""
+    if ! item_validate; then
+        rm -f "$tmp_download"
+        rm -rf "$tmp_extract_dir"
+        return 0
+    fi
+    # unless the hook found something else, it's the download under the upstream name
+    new_file="${new_file:-$tmp_download}"
+    candidate="${candidate:-$asset_name}"
+
+    pick_name "$candidate"
+    target="$dir/$new_name"
+
+    # the installed version (and a stray file already using the new name) waits in
+    # .tmp until the new one is in place
+    if ! set_aside "$installed_path" "$target"; then
+        say "  ✗ $name: could not move the old version aside, nothing changed"
+        rm -f "$tmp_download"
+        rm -rf "$tmp_extract_dir"
+        return 0
+    fi
+
+    # a rename on one disk; should it still fail, put the old version back
+    if ! mv -f "$new_file" "$target"; then
+        restore_previous
+        say "  ✗ $name: could not install ${target##*/}, kept the old one"
+        rm -f "$tmp_download"
+        rm -rf "$tmp_extract_dir"
+        return 0
+    fi
+    [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
+    rm -f "$tmp_download"
+    rm -rf "$tmp_extract_dir"
+    debug "installed as ${target##*/}"
+    drop_previous
+
+    item_extras
+
+    installed_file="$new_name"
+    save_update_metadata "$cfg_file"
+    status_final "✓ updated to $(shown_version "$installed_file")"
 }
 
 # One mode, app, apw or iso. It runs in a subshell, so its exit 1 (folder or

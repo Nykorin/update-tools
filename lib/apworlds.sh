@@ -1,9 +1,9 @@
 # shellcheck shell=bash disable=SC2154,SC2034
-# apworlds.sh: the Archipelago world updater (bundles): its prepare_dir and
-# process_item, and their helpers. main.sh loads it for -m apw, in that mode's
-# own subshell, so the function names don't clash with the other modules. It
-# reads (SC2154) and sets (SC2034) variables that main.sh and the shared
-# libraries own.
+# apworlds.sh: the Archipelago world updater (bundles): its prepare_dir, the
+# process_item hooks it needs, and their helpers. main.sh loads it for -m apw,
+# in that mode's own subshell, so the function names don't clash with the other
+# modules. It reads (SC2154) and sets (SC2034) variables that main.sh and the
+# shared libraries own.
 
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"
@@ -49,132 +49,24 @@ unbundle_apworld() {
     status "📦 extracted $asset_name"
 }
 
-# One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
-process_item() {
-    local i="$1"
-    local rc new_file new_name target
-    cfg_file="${cfg_files[$i]}"
-    name="${cfg_file##*/}"
-    name="${name%".$ITEM_EXT.cfg"}"
+ITEM_LOCALS=(zip_listing)
 
-    PROGRESS_DONE=$i
-    PROGRESS_LABEL="$name"
-    STATUS=""
-    block_redraw
-
-    load_cfg "$cfg_file"
-    debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
-
-    installed_path=$(find_installed "$dir")
-    if [[ -n "$installed_path" ]]; then
-        debug "installed file: ${installed_path##*/}"
-    else
-        debug "not installed yet: installing it"
-    fi
-
-    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-        status_final "✓ already checked today (${current_version:-$installed_file})"
-        return 0
-    fi
-
-    # a 304 has no download URL, so ask for the full list when installing; -f always does
-    # (a static item's etag is the server's file ETag, which it still needs to compare)
-    if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
-        etag=""
-        if [[ -n "$installed_path" ]]; then
-            debug "full release list requested (-f)"
-        else
-            debug "full release list requested (not installed yet)"
-        fi
-    fi
-    resolve_latest_asset; rc=$?
-    if (( rc == 2 )); then
-        # every further GitHub request would fail the same way
-        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more $ITEM_EXT(s) not checked"
-        return 2
-    elif (( rc )); then
-        return 0
-    fi
-
-    # nothing newer on the server, but the installed file is gone: nothing to download
-    if (( remote_unchanged )) && [[ -z "$installed_path" ]]; then
-        say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
-        return 0
-    fi
-    # nothing newer on the server (an old ISO's checksum file may be gone with it)
-    if (( remote_unchanged )); then
-        report_up_to_date
-        return 0
-    fi
-    if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
-        report_up_to_date
-        return 0
-    fi
-
-    # -c: report it, download and write nothing
-    if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: $(shown_version "$asset_name")"
-        return 0
-    fi
-
-    if [[ -n "$installed_path" ]]; then
-        status "⬆ updating"
-    else
-        status "⬇ installing"
-    fi
-
-    # extract_member picks the unpacker by extension; every world is a zip
+# extract_member picks the unpacker by extension; every world is a zip
+item_stage() {
     tmp_download="$TMP_DIR/download.zip"
+}
 
-    curl_takeover
-    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
-        curl_abandon
-        say "  ✗ Failed to download update for $name"
-        rm -f "$tmp_download"
-        return 0
-    fi
-    curl_handback
-    debug "downloaded to $tmp_download"
-
+# A world must be a zip; a bundle's .apworld is extracted and used instead. The
+# name stays the upstream one: Archipelago reports a world whose name doesn't
+# match its module.
+item_validate() {
     if ! zip_listing=$(unzip -Z1 "$tmp_download" 2>/dev/null); then
         say "  ✗ $name: download is not a valid .apworld (zip)"
-        rm -f "$tmp_download"
-        return 0
+        return 1
     fi
-    if ! unbundle_apworld; then
-        rm -f "$tmp_download"
-        return 0
-    fi
-
-    # Archipelago reports a world whose name doesn't match its module
-    pick_name "$asset_name"
-    target="$dir/$new_name"
-
-    new_file="$tmp_download"
-    # the installed version (and a stray file already using the new name) waits in
-    # .tmp until the new one is in place
-    if ! set_aside "$installed_path" "$target"; then
-        say "  ✗ $name: could not move the old version aside, nothing changed"
-        rm -f "$tmp_download"
-        return 0
-    fi
-
-    # a rename on one disk; should it still fail, put the old version back
-    if ! mv -f "$new_file" "$target"; then
-        restore_previous
-        say "  ✗ $name: could not install ${target##*/}, kept the old one"
-        rm -f "$tmp_download"
-        return 0
-    fi
-    [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
-    rm -f "$tmp_download"
-    debug "installed as ${target##*/}"
-    drop_previous
-
-    installed_file="$new_name"
-    save_update_metadata "$cfg_file"
-    status_final "✓ updated to $(shown_version "$installed_file")"
+    unbundle_apworld
 }
+
 
 prepare_dir() {
     TMP_DIR="$dir/.tmp"
