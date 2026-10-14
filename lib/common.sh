@@ -549,16 +549,30 @@ pick_gitlab_asset() {
 # ---------------------------------------------------------------------------
 # Names in a server's directory listing, folders with a trailing "/". Copes with
 # plain index pages and SourceForge (absolute links ending in "/download").
+# Returns 1 when the folder isn't there (404, 410: a definite answer, so the next
+# candidate may be tried; SourceForge lists links like "Docs Home/" that 404), and
+# 2 when the server gave no answer (timeout, connection error, other HTTP errors).
 list_dir() {
-    curl -fsL "${CURL_META[@]}" "$1" | grep -oE 'href="[^"]+"' | awk '
+    local page code
+    page=$(curl -sL "${CURL_META[@]}" -w '\n%{http_code}' "$1") || return 2
+    code="${page##*$'\n'}"; page="${page%$'\n'*}"
+    case "$code" in
+        2??)     ;;
+        404|410) return 1 ;;
+        *)       return 2 ;;
+    esac
+    grep -oE 'href="[^"]+"' <<<"$page" | awk '
         { h = substr($0, 7, length($0) - 7); sub(/[?#].*/, "", h); sub(/\/download$/, "", h)
           dir = (h ~ /\/$/); sub(/\/$/, "", h); n = split(h, p, "/"); name = p[n]
           if (name != "" && name != "." && name != "..") print name (dir ? "/" : "") }' | sort -u
+    return 0
 }
 
 # The stdin entries matching glob $1, newest first, judged by the numbers in the
 # part the wildcards matched: EndeavourOS_Titan-Nova-2026.08.15 must beat
-# Ganymede-Neo-2026.01.12, and the fixed "amd64" in a name must not count.
+# Ganymede-Neo-2026.01.12, and the fixed "amd64" in a name must not count. Entries
+# without any number there come last; URL escapes don't count as numbers (the 20 in
+# SourceForge's "Docs%20Home/").
 sort_newest() {
     local glob="$1" entry head tail
     head="${glob%%[\[*?]*}"; tail="${glob##*\*}"
@@ -566,32 +580,45 @@ sort_newest() {
         # shellcheck disable=SC2053
         [[ "$entry" == $glob ]] && printf '%s\n' "$entry"
     done | awk -v h="${#head}" -v t="${#tail}" '
-        { k = substr($0, h + 1, length($0) - h - t); gsub(/[^0-9]+/, ".", k); gsub(/^\.|\.$/, "", k)
-          print k "\t" $0 }' | sort -t $'\t' -k1,1Vr -k2,2Vr | cut -f2
+        { k = substr($0, h + 1, length($0) - h - t); gsub(/%[0-9A-Fa-f][0-9A-Fa-f]/, " ", k)
+          gsub(/[^0-9]+/, ".", k); gsub(/^\.|\.$/, "", k)
+          print (k == "" ? 0 : 1) "\t" k "\t" $0 }' | sort -t $'\t' -k1,1nr -k2,2Vr -k3,3Vr | cut -f3
 }
 
 # $1 = URL so far (ending in "/"), rest = the remaining path segments. A glob in a
 # folder falls back to the next-newest match (up to 3) when the rest finds nothing,
-# e.g. a new release folder that so far holds only a beta.
+# e.g. a new release folder that so far holds only a beta. Returns 0 (prints the
+# URL), 1 (nothing matches, or the folder isn't there) or 2 (the server gave no
+# answer for a folder: prints that folder, and doesn't fall back, since an older
+# folder would offer a downgrade).
 resolve_segments() {
-    local prefix="$1" seg="$2" cand
+    local prefix="$1" seg="$2" cand listing rc
     shift 2
     (( $# )) && seg+="/"
     if [[ "$seg" != *'*'* && "$seg" != *'['* ]]; then
         if (( $# )); then resolve_segments "$prefix$seg" "$@"; else printf '%s\n' "$prefix$seg"; fi
         return
     fi
+    listing=$(list_dir "$prefix"); rc=$?
+    if (( rc == 2 )); then
+        printf '%s\n' "$prefix"
+        return 2
+    fi
+    # not there (404): the caller may try its next candidate
+    (( rc == 0 )) || return 1
     while IFS= read -r cand; do
         if (( $# == 0 )); then
             printf '%s\n' "$prefix$cand"
             return 0
         fi
-        resolve_segments "$prefix$cand" "$@" && return 0
-    done < <(list_dir "$prefix" | sort_newest "$seg" | head -n 3)
+        resolve_segments "$prefix$cand" "$@"; rc=$?
+        (( rc == 1 )) || return "$rc"
+    done < <(sort_newest "$seg" <<<"$listing" | head -n 3)
     return 1
 }
 
-# Expand each glob segment of URL $1 against the server's listings. Prints the URL.
+# Expand each glob segment of URL $1 against the server's listings. Prints the URL,
+# or with return code 2 the folder that couldn't be listed (see resolve_segments).
 # Runs inside $(...), so the caller reports a failure: a say here would be captured.
 resolve_glob_url() {
     local -a segs
@@ -741,11 +768,24 @@ resolve_latest_asset() {
 
         dirlist)
             require_keys "dirlist manager" url || return 1
-            if ! asset_url=$(resolve_glob_url "$url"); then
+            local found glob_rc
+            found=$(resolve_glob_url "$url"); glob_rc=$?
+            if (( glob_rc == 2 )); then
+                say "⚠ ${PROGRESS_LABEL:-}: could not list $found, skipping"
+                return 1
+            elif (( glob_rc )); then
                 say "⚠ ${PROGRESS_LABEL:-}: nothing on the server matches ${url##*/}, skipping"
                 return 1
             fi
+            asset_url="$found"
             asset_name="${asset_url##*/}"
+            # never offer an older build than the installed one (the newest folder
+            # 404s while a mirror syncs, say): rank both by the URL's file glob
+            if [[ -n "${installed_file:-}" && "$asset_name" != "$installed_file" ]] &&
+               [[ $(printf '%s\n' "$asset_name" "$installed_file" | sort_newest "${url##*/}" | head -n 1) == "$installed_file" ]]; then
+                say "⚠ ${PROGRESS_LABEL:-}: the server's newest is $asset_name, older than the installed $installed_file, skipping"
+                return 1
+            fi
             asset_url+="${download_suffix:-}"
             latest_tag="$asset_name"
             ;;

@@ -32,7 +32,7 @@ checksum_for() {
 # to the cfg's URL (Garuda's latest.iso.sha256 sits beside latest.iso, not where it
 # redirects). Returns 1 to skip the item.
 fetch_checksum() {
-    local dir_url sum
+    local dir_url sum found glob_rc
     if [[ "$manager" == static ]]; then
         dir_url="${url%/*}/"
     else
@@ -42,10 +42,15 @@ fetch_checksum() {
     sum="$checksum"; sum="${sum//\{iso\}/$asset_name}"
     [[ "$sum" == *://* ]] || sum="$dir_url$sum"
     if [[ "$sum" == *'*'* || "$sum" == *'['* ]]; then
-        if ! sum=$(resolve_glob_url "$sum"); then
+        found=$(resolve_glob_url "$sum"); glob_rc=$?
+        if (( glob_rc == 2 )); then
+            say "⚠ ${PROGRESS_LABEL:-}: could not list $found, skipping"
+            return 1
+        elif (( glob_rc )); then
             say "⚠ ${PROGRESS_LABEL:-}: no checksum file matches ${sum##*/}, skipping"
             return 1
         fi
+        sum="$found"
     fi
     sum_url="$sum"
 
