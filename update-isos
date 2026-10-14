@@ -42,43 +42,18 @@ hash_file() {
     printf '%s\n' "${sum:-}"
 }
 
-# Sets iso_url (what to download), iso_name and sum_url through the shared
-# managers (static, dirlist, dateprobe). Returns 1 to skip.
-# Sets nothing_newer=1 when dateprobe found no build past the installed one.
-resolve_iso() {
+# Sets sum_url, the checksum file for asset_name. A relative checksum is next to
+# the ISO; for static, next to the cfg's URL (Garuda's latest.iso.sha256 sits
+# beside latest.iso, not where it redirects). Returns 1 to skip.
+find_checksum_url() {
     local dir_url sum
-    iso_url="" iso_name="" sum_url="" nothing_newer=0
-    if [[ -z "${url:-}" || -z "${checksum:-}" ]]; then
-        say "⚠ ${PROGRESS_LABEL:-}: cfg needs url and checksum, skipping"
-        return 1
-    fi
-    case "${manager:-}" in
-        static|dirlist|dateprobe) ;;
-        *)
-            say "⚠ ${PROGRESS_LABEL:-}: unknown or missing manager '${manager:-}', skipping"
-            return 1
-            ;;
-    esac
-    resolve_latest_asset || return 1
-    if (( remote_unchanged )); then
-        # the installed build may already be gone from the server, so don't ask
-        # for its checksum file
-        nothing_newer=1
-        iso_name="$installed_file"
-        return 0
-    fi
-    iso_name="$asset_name"
-    iso_url="$asset_url"
-    # a relative checksum is next to the ISO; for static, next to the cfg's URL
-    # (Garuda's latest.iso.sha256 sits beside latest.iso, not where it redirects)
     if [[ "$manager" == static ]]; then
         dir_url="${url%/*}/"
     else
         dir_url="${asset_url%"${download_suffix:-}"}"
         dir_url="${dir_url%/*}/"
     fi
-
-    sum="$checksum"; sum="${sum//\{iso\}/$iso_name}"
+    sum="$checksum"; sum="${sum//\{iso\}/$asset_name}"
     [[ "$sum" == *://* ]] || sum="$dir_url$sum"
     if [[ "$sum" == *'*'* || "$sum" == *'['* ]]; then
         if ! sum=$(resolve_glob_url "$sum"); then
@@ -93,7 +68,7 @@ resolve_iso() {
 process_item() {
     local i="$1"
     local sum_text algo want got size avail sum_name
-    local iso_url iso_name sum_url nothing_newer new_file new_name target
+    local rc sum_url new_file new_name target
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%".$ITEM_EXT.cfg"}"
@@ -113,6 +88,8 @@ process_item() {
         return 0
     fi
     dir="$ISO_DIR/$folder"
+    # every ISO is verified; the manager checks its own keys
+    require_keys "an ISO cfg" checksum || return 0
 
     installed_path=$(find_installed "$dir")
     if [[ -n "$installed_path" ]]; then
@@ -126,28 +103,47 @@ process_item() {
         return 0
     fi
 
-    if ! resolve_iso; then
-        return 0
-    fi
-    if (( nothing_newer )); then
+    # a 304 has no download URL, so ask for the full list when installing; -f always does
+    # (a static item's etag is the server's file ETag, which it still needs to compare)
+    if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
+        etag=""
         if [[ -n "$installed_path" ]]; then
-            status_final "✓ up to date (${latest_tag:-$installed_file})"
-            [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
+            debug "full release list requested (-f)"
         else
-            say "⚠ $name: $installed_file is missing and the server has nothing newer, skipping"
+            debug "full release list requested (not installed yet)"
         fi
+    fi
+    resolve_latest_asset; rc=$?
+    if (( rc == 2 )); then
+        # every further GitHub request would fail the same way
+        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more $ITEM_EXT(s) not checked"
+        return 2
+    elif (( rc )); then
         return 0
     fi
 
+    # nothing newer on the server, but the installed file is gone: nothing to download
+    if (( remote_unchanged )) && [[ -z "$installed_path" ]]; then
+        say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
+        return 0
+    fi
+    # nothing newer: the installed build may already be gone from the server, so
+    # don't ask for its checksum file
+    if (( remote_unchanged )); then
+        status_final "✓ up to date (${latest_tag:-$installed_file})"
+        [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
+        return 0
+    fi
+    find_checksum_url || return 0
     debug "checksum file: $sum_url"
     if ! sum_text=$(curl -fsL "${CURL_META[@]}" "$sum_url"); then
         say "⚠ $name: could not fetch checksum file $sum_url, skipping"
         return 0
     fi
-    read -r algo want <<<"$(checksum_for "$sum_text" "$iso_name")"
+    read -r algo want <<<"$(checksum_for "$sum_text" "$asset_name")"
     [[ -n "${want:-}" ]] && debug "expected $algo ${want:0:16}…"
     if [[ -z "${want:-}" ]]; then
-        say "⚠ $name: $iso_name isn't listed in ${sum_url##*/}, skipping"
+        say "⚠ $name: $asset_name isn't listed in ${sum_url##*/}, skipping"
         return 0
     fi
 
@@ -174,12 +170,12 @@ process_item() {
     mkdir -p "$dir"
     # static already has the size from its lookup
     size="${remote_length:-}"
-    [[ -n "$size" ]] || size=$(curl -fsIL "${CURL_META[@]}" "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
+    [[ -n "$size" ]] || size=$(curl -fsIL "${CURL_META[@]}" "$asset_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
     avail=$(df --output=avail -B1 "$dir" | tail -n 1)
     debug "size ${size:-unknown} bytes, $(( avail >> 20 )) MiB free"
     # keep 256 MiB spare; the old ISO stays until the new one verifies
     if [[ "$size" =~ ^[0-9]+$ ]] && (( size + 268435456 > avail )); then
-        say "⚠ $name: not enough space for $iso_name ($(( size >> 20 )) MiB + 256 MiB spare needed, $(( avail >> 20 )) MiB free), skipping"
+        say "⚠ $name: not enough space for $asset_name ($(( size >> 20 )) MiB + 256 MiB spare needed, $(( avail >> 20 )) MiB free), skipping"
         return 0
     fi
 
@@ -191,10 +187,10 @@ process_item() {
 
     # next to the ISO (same filesystem, so installing is a rename), hidden and not
     # ending in .iso so Ventoy never lists a partial download
-    tmp_download="$dir/.$iso_name.part"
+    tmp_download="$dir/.$asset_name.part"
 
     curl_takeover
-    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$iso_url" -o "$tmp_download"; then
+    if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
         curl_abandon
         say "  ✗ Failed to download update for $name"
         rm -f "$tmp_download"
@@ -203,17 +199,17 @@ process_item() {
     curl_handback
     debug "downloaded to $tmp_download"
 
-    status "🔍 verifying $iso_name"
+    status "🔍 verifying $asset_name"
     got=$(hash_file "$algo" "$tmp_download")
     debug "downloaded file's $algo: ${got:0:16}…"
     if [[ "$got" != "$want" ]]; then
-        say "  ✗ $name: checksum mismatch for $iso_name, download deleted"
+        say "  ✗ $name: checksum mismatch for $asset_name, download deleted"
         rm -f "$tmp_download"
         return 0
     fi
 
     # the checksum was looked up under the upstream name; this is only where it lands
-    pick_name "$iso_name"
+    pick_name "$asset_name"
     target="$dir/$new_name"
 
     new_file="$tmp_download"
@@ -238,7 +234,7 @@ process_item() {
     drop_previous
 
     sum_name="${checksum_save:-${sum_url##*/}}"
-    sum_name="${sum_name//\{iso\}/$iso_name}"
+    sum_name="${sum_name//\{iso\}/$asset_name}"
     printf '%s\n' "$sum_text" > "$dir/$sum_name"
     [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
 
