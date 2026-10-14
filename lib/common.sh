@@ -30,6 +30,9 @@ debug() {
     say "  · ${PROGRESS_LABEL:-}: $*"
 }
 
+# timed's report files, innermost last, so the EXIT trap can remove them
+TIMED_FILES=()
+
 # timed LABEL CMD...: run CMD in this shell; with -d, report how long it took,
 # measured with bash's time keyword. The report goes to a temp file so it can't
 # land in the status block; CMD's own stderr is untouched. An empty LABEL means
@@ -39,6 +42,7 @@ timed() {
     shift
     if (( ! DEBUG )); then "$@"; return; fi
     tf=$(mktemp)
+    TIMED_FILES+=("$tf")
     local TIMEFORMAT='%3R %3U %3S'
     { time "$@" 2>&3; } 3>&2 2>"$tf"
     rc=$?
@@ -53,6 +57,7 @@ timed() {
         function fmt(v) { return v >= 60 ? sprintf("%dm%.2fs", int(v / 60), v - 60 * int(v / 60)) : sprintf("%.2fs", v) }
         { printf "%s (user %s, sys %s)", fmt(sec($1)), fmt(sec($2)), fmt(sec($3)) }' "$tf")
     rm -f "$tf"
+    unset 'TIMED_FILES[-1]'
     commit_final   # the item's result line first, then its time
     say "  · ${label:-${PROGRESS_LABEL:-}}: took $took"
     return "$rc"
@@ -409,12 +414,12 @@ rate_summary() {
 }
 
 # Setup every updater shares: the EXIT trap, which removes the GitHub headers
-# file and curl_run's log, then runs the script's own cleanup(); and the GitHub
-# token and headers file (update-isos never contacts GitHub, so they simply go
-# unused there).
+# file, curl_run's log and timed's files, then runs the script's own cleanup();
+# and the GitHub token and headers file (update-isos never contacts GitHub, so
+# they simply go unused there).
 start_run() {
     GITHUB_HEADERS=$(mktemp)
-    trap 'rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}"; cleanup' EXIT
+    trap 'rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}"; cleanup' EXIT
     load_github_token
 }
 

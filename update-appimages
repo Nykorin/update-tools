@@ -258,7 +258,7 @@ process_item() {
     # all moves are renames on one disk; should the last still fail, put everything back
     if ! mv "$new_file" "$target"; then
         (( ${#aside[@]} )) && unstash
-        say "  ✗ $name: could not install the new AppImage, kept the old one"
+        say "  ✗ $name: could not install ${target##*/}, kept the old one"
         rm -f "$tmp_download"
         [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
         return 0

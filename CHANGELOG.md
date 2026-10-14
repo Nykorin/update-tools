@@ -29,6 +29,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-isos.sh:** Reading the root folder from `ISO_ROOT` in the environment, and finding `_ISO` when `-r` names the drive's mount point; `-r` now takes the `_ISO` folder itself *(user)*
 
 ### Fixed
+- **update-isos.sh:** A failed move into place (a full or read-only drive) went unnoticed: the old ISO was deleted anyway when the names differed, the cfg named the missing new one and the run said `✓ updated`; now the old ISO is kept and the item reports `✗ … could not install …, kept the old one` *(Claude)*
+- **update-apworlds.sh:** A failed move into place still saved the cfg and said `✓ updated`, with the old world left in `.old/`; now the backup is moved back and nothing is saved. All three updaters use the same failure message (update-appimages said `could not install the new AppImage`) *(Claude)*
+- **common.sh:** Ctrl+C (or a killed run) in `-d` mode left `timed`'s temp files in `/tmp`; the shared EXIT trap now removes them *(Claude)*
 - **update-isos.sh:** Static ISOs asked the server for the size a second time before the free-space check; they reuse the size from the lookup *(Claude)*
 
 ---

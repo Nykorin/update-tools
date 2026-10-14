@@ -214,7 +214,12 @@ process_item() {
 
     new_file="$tmp_download"
     target="$dir/$iso_name"
-    mv -f "$new_file" "$target"
+    # the old ISO is deleted only once the new one is in place
+    if ! mv -f "$new_file" "$target"; then
+        say "  ✗ $name: could not install ${target##*/}, kept the old one"
+        rm -f "$tmp_download"
+        return 0
+    fi
     debug "installed as ${target##*/}"
     [[ -n "$installed_path" && "$installed_path" != "$target" ]] && rm -f "$installed_path"
 

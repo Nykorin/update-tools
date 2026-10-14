@@ -65,7 +65,8 @@ unbundle_apworld() {
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
-    local rc new_file target target_name
+    local rc new_file target target_name old
+    local -a backed=()
     local -a top_dirs
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
@@ -168,12 +169,20 @@ process_item() {
     fi
 
     target="$dir/$target_name"
-    [[ -f "$target" ]] && backup_file "$target"
+    [[ -f "$target" ]] && backup_file "$target" && backed+=("$target")
     [[ -n "$installed_path" && "$installed_path" != "$target" && -f "$installed_path" ]] && \
-        backup_file "$installed_path"
+        backup_file "$installed_path" && backed+=("$installed_path")
 
     new_file="$tmp_download"
-    mv "$new_file" "$target"
+    # a rename on one disk; should it still fail, put the backups back
+    if ! mv "$new_file" "$target"; then
+        for old in "${backed[@]}"; do
+            mv "$OLD_DIR/${old##*/}" "$old"
+        done
+        say "  ✗ $name: could not install ${target##*/}, kept the old one"
+        rm -f "$tmp_download"
+        return 0
+    fi
     chmod 644 "$target"
     debug "installed as ${target##*/}"
     [[ -n "$installed_path" && "$installed_path" != "$target" ]] && debug "replaced ${installed_path##*/}; old copies in $OLD_DIR/"
