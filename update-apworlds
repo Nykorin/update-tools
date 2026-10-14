@@ -200,11 +200,11 @@ main() {
 
     WORLDS_DIR="${ROOT_ARG:-/mnt/games_rando/Archipelago/custom_worlds}"
     WORLDS_DIR="${WORLDS_DIR%/}"
-    if [[ ! -d "$WORLDS_DIR" ]]; then
-        echo "ERROR: $WORLDS_DIR not found. Is the games drive mounted? Point to the folder with -r DIR." >&2
+    dir="$WORLDS_DIR"
+    if [[ ! -d "$dir" ]]; then
+        echo "ERROR: $dir not found. Is the games drive mounted? Point to the folder with -r DIR." >&2
         exit 1
     fi
-    dir="$WORLDS_DIR"
     CFG_DIR="$dir/.cfg"
     OLD_DIR="$dir/.old"
     TMP_DIR="$dir/.tmp"

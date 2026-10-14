@@ -293,11 +293,11 @@ main() {
 
     APPIMAGE_DIR="${ROOT_ARG:-$HOME/AppImages}"
     APPIMAGE_DIR="${APPIMAGE_DIR%/}"
-    if [[ ! -d "$APPIMAGE_DIR" ]]; then
-        echo "ERROR: $APPIMAGE_DIR not found. Point to the AppImages folder with -r DIR." >&2
+    dir="$APPIMAGE_DIR"
+    if [[ ! -d "$dir" ]]; then
+        echo "ERROR: $dir not found. Point to the AppImages folder with -r DIR." >&2
         exit 1
     fi
-    dir="$APPIMAGE_DIR"
     CFG_DIR="$dir/.cfg"
     ICONS_DIR="$dir/.icons"
     OLD_DIR="$dir/.old"

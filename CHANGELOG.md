@@ -9,7 +9,11 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-14]
 
 ### Changed
+- **all scripts:** update-isos' root folder is `ISO_DIR` (was `ISO_ROOT`), and all three updaters copy their folder to `dir` first and check that it exists through `dir` *(Claude, directed by user)*
 - **all scripts:** Each updater's required commands are listed in one `case` in `require_cmds` (`common.sh`); `main` passes its type (`app`, `apw`, `iso`) instead of the command names *(Claude, directed by user)*
+
+### Removed
+- **update-isos.sh:** Reading the root folder from `ISO_ROOT` in the environment, and finding `_ISO` when `-r` names the drive's mount point; `-r` now takes the `_ISO` folder itself *(user)*
 
 ---
 

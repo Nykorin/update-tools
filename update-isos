@@ -185,10 +185,10 @@ process_item() {
     # folder= is relative to the root, so -r still works; it may not leave it
     folder="${folder:-}"; folder="${folder%/}"
     if [[ -z "$folder" || "$folder" == /* || "/$folder/" == */../* ]]; then
-        say "⚠ $name: folder must be a path inside $ISO_ROOT, like Linux/Fedora/Fedora, skipping"
+        say "⚠ $name: folder must be a path inside $ISO_DIR, like Linux/Fedora/Fedora, skipping"
         return 0
     fi
-    dir="$ISO_ROOT/$folder"
+    dir="$ISO_DIR/$folder"
 
     installed_path=$(find_installed "$dir")
     if [[ -n "$installed_path" ]]; then
@@ -317,8 +317,7 @@ USAGE_ABOUT="Check and update the ISOs on the Ventoy drive (/mnt/ventoy/_ISO), o
 NAME.iso.cfg per ISO in its .cfg folder, whose folder= key names the ISO's
 folder below it (like Linux/Fedora/Fedora). Every download is checksum-verified
 before it replaces anything."
-USAGE_ROOT="/mnt/ventoy/_ISO: the drive's mount
-                    point or its _ISO folder (also ISO_ROOT=DIR)"
+USAGE_ROOT="/mnt/ventoy/_ISO (the drive's _ISO folder)"
 
 main() {
     local force=false check_only=false
@@ -326,19 +325,19 @@ main() {
     local today
     today=$(date +%F)
 
-    ISO_ROOT="${ROOT_ARG:-/mnt/ventoy/_ISO}"
-    ISO_ROOT="${ISO_ROOT%/}"
-
-    if [[ ! -d "$ISO_ROOT" ]]; then
-        echo "ERROR: $ISO_ROOT not found. Is the Ventoy drive mounted? Point to it with -r DIR." >&2
+    ISO_DIR="${ROOT_ARG:-/mnt/ventoy/_ISO}"
+    ISO_DIR="${ISO_DIR%/}"
+    dir="$ISO_DIR"
+    if [[ ! -d "$dir" ]]; then
+        echo "ERROR: $dir not found. Is the Ventoy drive mounted? Point to it with -r DIR." >&2
         exit 1
     fi
-    CFG_DIR="$ISO_ROOT/.cfg"
+    CFG_DIR="$dir/.cfg"
 
     require_cmds iso
     mkdir -p "$CFG_DIR"
     # left over from a run that was killed outright (Ctrl+C cleans up after itself)
-    find "$ISO_ROOT" -mindepth 1 -name '.*.iso.part' -type f -delete
+    find "$dir" -mindepth 1 -name '.*.iso.part' -type f -delete
 
     # a half-downloaded ISO is useless, and a hidden .part file is easy to forget
     start_run
@@ -351,7 +350,7 @@ main() {
     fi
     init_progress "${#cfg_files[@]}"
 
-    local i cfg_file dir name installed_path sum_text algo want got size avail sum_name
+    local i cfg_file name installed_path sum_text algo want got size avail sum_name
     local iso_url iso_name sum_url nothing_newer
 
     timed "total" run_items
