@@ -36,7 +36,7 @@ keep_stash() {
 # Put the stashed file(s) back where they were.
 unstash() {
     local pending="$OLD_DIR/.$name.pending" f
-    for f in "$pending"/*; do mv "$f" "$APPIMAGES_DIR/"; done
+    for f in "$pending"/*; do mv "$f" "$dir/"; done
     rmdir "$pending"
 }
 
@@ -89,10 +89,10 @@ generate_desktop_entry() {
 
     if [[ -z "$(icon_exists "$ICONS_DIR" "$name")" ]]; then
         # tiers, in priority order, as "dir:maxdepth:sorted"
-        local icon_src="" tier dir maxdepth sorted
+        local icon_src="" tier icon_dir maxdepth sorted
         for tier in "$squashfs_root:1:" "$squashfs_root/usr/share/icons::sorted" "$squashfs_root::"; do
-            IFS=: read -r dir maxdepth sorted <<<"$tier"
-            icon_src=$(find_icon "$dir" "$maxdepth" "$sorted")
+            IFS=: read -r icon_dir maxdepth sorted <<<"$tier"
+            icon_src=$(find_icon "$icon_dir" "$maxdepth" "$sorted")
             [[ -n "$icon_src" ]] && break
         done
         if [[ -n "$icon_src" ]]; then
@@ -143,7 +143,7 @@ process_item() {
     load_cfg "$cfg_file"
     debug "cfg: manager=${manager:-?} version=${current_version:-none} last_checked=${last_checked:-never}"
 
-    installed_path=$(find_installed "$APPIMAGES_DIR")
+    installed_path=$(find_installed "$dir")
     if [[ -n "$installed_path" ]]; then
         debug "installed file: ${installed_path##*/}"
     else
@@ -238,7 +238,7 @@ process_item() {
         fi
     fi
 
-    local target="$APPIMAGES_DIR/$new_name"
+    local target="$dir/$new_name"
     local -a aside=()
     [[ -n "$installed_path" ]] && aside+=("$installed_path")
     # a stray file already using the new name is backed up too, never overwritten
@@ -291,13 +291,13 @@ main() {
     local today
     today=$(date +%F)
 
-    APPIMAGES_DIR="$HOME/AppImages"
-    CFG_DIR="$APPIMAGES_DIR/.cfg"
-    ICONS_DIR="$APPIMAGES_DIR/.icons"
-    OLD_DIR="$APPIMAGES_DIR/.old"
+    dir="$HOME/AppImages"
+    CFG_DIR="$dir/.cfg"
+    ICONS_DIR="$dir/.icons"
+    OLD_DIR="$dir/.old"
 
     require_cmds curl jq
-    TMP_DIR="$APPIMAGES_DIR/.tmp"
+    TMP_DIR="$dir/.tmp"
     mkdir -p "$CFG_DIR" "$ICONS_DIR" "$OLD_DIR"
     # anything left here is from an interrupted earlier run
     rm -rf "$TMP_DIR"
