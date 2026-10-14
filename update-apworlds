@@ -65,8 +65,7 @@ unbundle_apworld() {
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
-    local rc new_file target target_name
-    local -a top_dirs
+    local rc new_file new_name target
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%".$ITEM_EXT.cfg"}"
@@ -151,23 +150,19 @@ process_item() {
         return 0
     fi
 
-    mapfile -t top_dirs < <(awk -F/ 'NF>1 && $1!="" {print $1}' <<<"$zip_listing" | sort -u)
-    if [[ -n "${install_name:-}" ]]; then
-        target_name="$install_name"
-    elif (( ${#top_dirs[@]} == 1 )); then
-        target_name="${top_dirs[0]}.apworld"
-    else
-        # no single module folder to name it after; never install a non-.apworld name
-        target_name="$asset_name"
-        [[ "${target_name,,}" == *.apworld ]] || target_name="$name.apworld"
+    # keep the upstream name, like the AppImages and ISOs (Archipelago reports a world
+    # whose name doesn't match its module); a download URL without a usable .apworld
+    # name keeps the current one, or on a first install takes the cfg's name
+    new_name="$asset_name"
+    if [[ "${new_name,,}" != *.apworld ]]; then
+        if [[ -n "$installed_path" ]]; then
+            new_name="${installed_path##*/}"
+        else
+            new_name="$name.apworld"
+        fi
     fi
 
-    debug "module folder(s): ${top_dirs[*]:-none}; installing as $target_name${install_name:+ (install_name)}"
-    if (( ${#top_dirs[@]} != 1 )) || [[ "${target_name%.apworld}" != "${top_dirs[0]}" ]]; then
-        say "  ⚠ $name: $target_name doesn't match module folder (${top_dirs[*]:-none})"
-    fi
-
-    target="$dir/$target_name"
+    target="$dir/$new_name"
 
     new_file="$tmp_download"
     # the installed version (and a stray file already using the new name) waits in
@@ -190,7 +185,7 @@ process_item() {
     debug "installed as ${target##*/}"
     drop_previous
 
-    installed_file="$target_name"
+    installed_file="$new_name"
     save_update_metadata "$cfg_file"
     status_final "✓ updated to $(shown_version "$installed_file")"
 }

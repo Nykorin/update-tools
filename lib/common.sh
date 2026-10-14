@@ -150,7 +150,7 @@ CFG_KEYS=(
     manager repo repo_filename allow_prereleases repo_url
     feed_url channel arch_key download_base url
     content_length last_modified current_version
-    install_name apworld_filename installed_file last_checked
+    apworld_filename installed_file last_checked
     asset_digest etag
     checksum checksum_save download_suffix probe_days
     folder iso_hash checksum_file
@@ -789,11 +789,11 @@ resolve_latest_asset() {
 }
 
 # The version to show for a result: latest_tag, plus file name $1 in brackets
-# when the tag doesn't already include it (a static tag ends in the name, a
-# dirlist tag is the name).
+# unless the tag already ends in it (a static tag ends in -NAME, a dirlist tag is
+# the name). Not a substring test: pokemon_emerald.apworld contains emerald.apworld.
 shown_version() {
     local shown="${latest_tag:-}" file="${1:-}"
-    if [[ -n "$file" && "$shown" != *"$file"* ]]; then
+    if [[ -n "$file" && "$shown" != "$file" && "$shown" != *"-$file" ]]; then
         shown="${shown:+$shown (}$file${shown:+)}"
     fi
     printf '%s\n' "$shown"

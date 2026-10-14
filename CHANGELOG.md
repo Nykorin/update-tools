@@ -26,12 +26,14 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** Each updater's required commands are listed in one `case` in `require_cmds` (`common.sh`); `main` passes its type (`app`, `apw`, `iso`) instead of the command names *(Claude, directed by user)*
 
 ### Removed
+- **update-apworlds.sh, common.sh:** Renaming worlds after their module folder, the `install_name` override and the module-folder mismatch warning; worlds keep their upstream name like AppImages and ISOs (a name without `.apworld` keeps the installed name, or becomes `NAME.apworld` on a first install). All 124 current worlds already ship under their module name, and Archipelago reports a mismatch under "Failed World Loads" *(Claude, directed by user)*
 - **update-appimages.sh, update-apworlds.sh, common.sh:** Archiving to `.old/`: one previous version per app in `.old/NAME/` (`stash_old`, `keep_stash`, `unstash`), and every replaced world in `.old/` (`backup_file`). The existing `.old/` folders are left alone *(Claude, directed by user)*
 - **update-appimages.sh:** Re-setting `installed_file` from `installed_path` on an up-to-date check; `installed_path` is built from `installed_file`, so it never changed anything *(Claude, directed by user)*
 - **update-isos.sh:** Clearing `tmp_download` after each use, which the other two don't do; the EXIT trap's `rm -f` of a file that's already gone is harmless *(Claude, directed by user)*
 - **update-isos.sh:** Reading the root folder from `ISO_ROOT` in the environment, and finding `_ISO` when `-r` names the drive's mount point; `-r` now takes the `_ISO` folder itself *(user)*
 
 ### Fixed
+- **common.sh:** `shown_version` treated the file name as already shown whenever the version merely contained it (`static-…-pokemon_emerald.apworld` hid `emerald.apworld`); only a version that is the name or ends in `-NAME` counts now *(Claude)*
 - **update-isos.sh:** A failed move into place (a full or read-only drive) went unnoticed: the old ISO was deleted anyway when the names differed, the cfg named the missing new one and the run said `✓ updated`; now the old ISO is kept and the item reports `✗ … could not install …, kept the old one` *(Claude)*
 - **update-apworlds.sh:** A failed move into place still saved the cfg and said `✓ updated`, with the old world left in `.old/`; now the backup is moved back and nothing is saved. All three updaters use the same failure message (update-appimages said `could not install the new AppImage`) *(Claude)*
 - **common.sh:** Ctrl+C (or a killed run) in `-d` mode left `timed`'s temp files in `/tmp`; the shared EXIT trap now removes them *(Claude)*
