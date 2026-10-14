@@ -42,7 +42,7 @@ unbundle_apworld() {
     fi
 
     member="${matches[0]}"
-    extracted=$(mktemp -p "$TMP_DIR" "extracted.XXXXXX")
+    extracted="$TMP_DIR/extracted.apworld"
     if ! extract_member "$tmp_download" "$member" "$extracted"; then
         say "  ✗ $world_name: could not extract $member"
         rm -f "$extracted"
@@ -125,7 +125,7 @@ process_item() {
     fi
 
     # extract_member picks the unpacker by extension; every world is a zip
-    tmp_download=$(mktemp -p "$TMP_DIR" --suffix=.zip "download.XXXXXX")
+    tmp_download="$TMP_DIR/download.zip"
 
     curl_takeover
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then

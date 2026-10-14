@@ -71,7 +71,9 @@ generate_desktop_entry() {
     local icon_dest="$ICONS_DIR/$app_name"
     local desktop_dest; desktop_dest=$(desktop_entry_path "$app_name")
     mkdir -p "$ICONS_DIR" "${desktop_dest%/*}"
-    local tmp_extract; tmp_extract=$(mktemp -d -p "$TMP_DIR")
+    local tmp_extract="$TMP_DIR/desktop"
+    rm -rf "$tmp_extract"
+    mkdir -p "$tmp_extract"
     DESKTOP_TMP="$tmp_extract"
 
     if ! (cd "$tmp_extract" && "$appimage_file" --appimage-extract &>/dev/null); then
@@ -186,7 +188,8 @@ process_item() {
     fi
 
     # staged next to the AppImages (same disk, not RAM-backed /tmp): installing is a rename
-    tmp_download=$(mktemp -p "$TMP_DIR" --suffix="-$asset_name" "download.XXXXXX")
+    # the asset's name keeps an archive's extension, which decides how it's unpacked
+    tmp_download="$TMP_DIR/download-$asset_name"
 
     curl_takeover
     # -f: an HTTP error page must never replace a working AppImage
@@ -205,7 +208,9 @@ process_item() {
     tmp_extract_dir=""
     case "$asset_name" in
         *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar|*.zip)
-            tmp_extract_dir=$(mktemp -d -p "$TMP_DIR")
+            tmp_extract_dir="$TMP_DIR/archive"
+            rm -rf "$tmp_extract_dir"
+            mkdir -p "$tmp_extract_dir"
             if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
                 say "  ✗ Failed to extract archive for $app_name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"

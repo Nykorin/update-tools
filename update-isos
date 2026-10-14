@@ -260,7 +260,7 @@ process_item() {
 
     # next to the ISO (same filesystem, so installing is a rename), hidden and not
     # ending in .iso so Ventoy never lists a partial download
-    tmp_download=$(mktemp -p "$dir" --suffix=.part ".download.XXXXXX")
+    tmp_download="$dir/.$iso_name.part"
 
     curl_takeover
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$iso_url" -o "$tmp_download"; then
@@ -336,7 +336,7 @@ main() {
     # a half-downloaded ISO is useless, and a hidden .part file is easy to forget
     trap cleanup EXIT
     # left over from a run that was killed outright (Ctrl+C cleans up after itself)
-    find "$ISO_ROOT" -mindepth 1 -name '.download.*.part' -type f -delete
+    find "$ISO_ROOT" -mindepth 1 -name '.*.iso.part' -type f -delete
 
     local -a cfg_files
     # skip hidden folders below the root only: the root's own path may contain one
