@@ -69,7 +69,7 @@ process_item() {
     local -a top_dirs
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
-    name="${name%.apworld.cfg}"
+    name="${name%".$ITEM_EXT.cfg"}"
 
     PROGRESS_DONE=$i
     PROGRESS_LABEL="$name"
@@ -87,11 +87,12 @@ process_item() {
     fi
 
     if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-        status_final "✓ already checked today (${current_version:-unknown})"
+        status_final "✓ already checked today (${current_version:-$installed_file})"
         return 0
     fi
 
     # a 304 has no download URL, so ask for the full list when installing; -f always does
+    # (a static item's etag is the server's file ETag, which it still needs to compare)
     if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
         etag=""
         if [[ -n "$installed_path" ]]; then
@@ -103,21 +104,21 @@ process_item() {
     resolve_latest_asset; rc=$?
     if (( rc == 2 )); then
         # every further GitHub request would fail the same way
-        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more world(s) not checked"
+        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more $ITEM_EXT(s) not checked"
         return 2
     elif (( rc )); then
         return 0
     fi
 
     if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
-        status_final "✓ up to date (${current_version:-$latest_tag})"
+        status_final "✓ up to date (${latest_tag:-$installed_file})"
         [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
         return 0
     fi
 
     # -c: report it, download and write nothing
     if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: $latest_tag ($asset_name)"
+        status_final "⬆ update available: $(shown_version "$asset_name")"
         return 0
     fi
 
@@ -133,7 +134,7 @@ process_item() {
     curl_takeover
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
         curl_abandon
-        say "  ✗ Failed to download $name"
+        say "  ✗ Failed to download update for $name"
         rm -f "$tmp_download"
         return 0
     fi
@@ -177,7 +178,7 @@ process_item() {
 
     installed_file="$target_name"
     save_update_metadata "$cfg_file"
-    status_final "✓ updated to $latest_tag ($target_name)"
+    status_final "✓ updated to $(shown_version "$installed_file")"
 }
 
 # Picks this updater's settings in lib/update-tools.

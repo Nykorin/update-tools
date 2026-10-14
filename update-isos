@@ -96,7 +96,7 @@ process_item() {
     local iso_url iso_name sum_url nothing_newer
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
-    name="${name%.iso.cfg}"
+    name="${name%".$ITEM_EXT.cfg"}"
 
     PROGRESS_DONE=$i
     PROGRESS_LABEL="$name"
@@ -104,7 +104,8 @@ process_item() {
     block_redraw
 
     load_cfg "$cfg_file"
-    debug "cfg: manager=${manager:-?} folder=${folder:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
+    debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
+    debug "folder: ${folder:-none}"
     # folder= is relative to the root, so -r still works; it may not leave it
     folder="${folder:-}"; folder="${folder%/}"
     if [[ -z "$folder" || "$folder" == /* || "/$folder/" == */../* ]]; then
@@ -130,7 +131,7 @@ process_item() {
     fi
     if (( nothing_newer )); then
         if [[ -n "$installed_path" ]]; then
-            status_final "✓ up to date ($installed_file)"
+            status_final "✓ up to date (${latest_tag:-$installed_file})"
             [[ "$check_only" == true ]] || save_update_metadata "$cfg_file"
         else
             say "⚠ $name: $installed_file is missing and the server has nothing newer, skipping"
@@ -166,12 +167,14 @@ process_item() {
 
     # -c: report it, download and write nothing
     if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: ${latest_tag:-$iso_name}"
+        status_final "⬆ update available: $(shown_version "$asset_name")"
         return 0
     fi
 
     mkdir -p "$dir"
-    size=$(curl -fsIL "${CURL_META[@]}" "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
+    # static already has the size from its lookup
+    size="${remote_length:-}"
+    [[ -n "$size" ]] || size=$(curl -fsIL "${CURL_META[@]}" "$iso_url" | awk 'tolower($1) == "content-length:" { v = $2 } END { sub(/\r/, "", v); print v }')
     avail=$(df --output=avail -B1 "$dir" | tail -n 1)
     debug "size ${size:-unknown} bytes, $(( avail >> 20 )) MiB free"
     # keep 256 MiB spare; the old ISO stays until the new one verifies
@@ -194,7 +197,7 @@ process_item() {
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$iso_url" -o "$tmp_download"; then
         curl_abandon
         say "  ✗ Failed to download update for $name"
-        rm -f "$tmp_download"; tmp_download=""
+        rm -f "$tmp_download"
         return 0
     fi
     curl_handback
@@ -205,12 +208,11 @@ process_item() {
     debug "downloaded file's $algo: ${got:0:16}…"
     if [[ "$got" != "$want" ]]; then
         say "  ✗ $name: checksum mismatch for $iso_name, download deleted"
-        rm -f "$tmp_download"; tmp_download=""
+        rm -f "$tmp_download"
         return 0
     fi
 
     mv -f "$tmp_download" "$dir/$iso_name"
-    tmp_download=""
     [[ -n "$installed_path" && "$installed_path" != "$dir/$iso_name" ]] && rm -f "$installed_path"
 
     sum_name="${checksum_save:-${sum_url##*/}}"
@@ -220,7 +222,7 @@ process_item() {
 
     installed_file="$iso_name" iso_hash="$algo:$want" checksum_file="$sum_name"
     save_update_metadata "$cfg_file"
-    status_final "✓ updated to ${latest_tag:-$iso_name}"
+    status_final "✓ updated to $(shown_version "$installed_file")"
 }
 
 # Picks this updater's settings in lib/update-tools.

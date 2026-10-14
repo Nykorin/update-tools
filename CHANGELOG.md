@@ -12,6 +12,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **lib/update-tools:** One `main` and `run_items` for all three updaters, sourced like `common.sh`; each updater now only sets `ITEM_TYPE`, `ITEM_EXT`, `DEFAULT_DIR` and `NOT_FOUND_HINT` and defines `prepare_dir` (its other folders and leftover cleanup). Output is unchanged *(Claude, directed by user)*
 
 ### Changed
+- **update-appimages.sh:** A GitHub rate limit stops the run (`✗ stopping, N more appimage(s) not checked`), like update-apworlds, instead of skipping that app and trying GitHub again for the rest *(Claude, directed by user)*
+- **all scripts:** The `-c` report and the "updated to" line come from one helper, `shown_version` in `common.sh`: the version, plus the file name when the version doesn't already contain it (a static version ends in the name, so `static-311-fake.AppImage (fake.AppImage)` is now `static-311-fake.AppImage`; worlds show the installed name instead of the target name, which is the same file) *(Claude, directed by user)*
+- **all scripts:** The shared `process_item` steps now use the same lines: the `name` strip uses `ITEM_EXT`; the cfg debug line shows manager, version, installed file and last check everywhere (update-isos prints `folder` on its own line); "already checked today" falls back to the installed file and "up to date" shows the version just looked up; the github ETag block (with its debug lines) is the same in update-appimages and update-apworlds; the rate-limit stop message names the item type (`apworld(s)`, was `world(s)`); worlds' download failure says "Failed to download update for" like the others *(Claude, directed by user)*
 - **all scripts:** Each updater's settings (`ITEM_EXT`, `USAGE_ABOUT`, `USAGE_ROOT`, `DEFAULT_DIR`, `NOT_FOUND_HINT`) are one `case` on `ITEM_TYPE` in `item_settings` (`lib/update-tools`); each updater now sets only `ITEM_TYPE`. `USAGE_ITEM` is replaced by `ITEM_EXT`, so the `-f` and `-d` help lines say `appimage`, `apworld` and `iso` (were `app`, `world` and `ISO`) *(Claude, directed by user)*
 - **common.sh, update-isos.sh:** The ISO managers moved into `common.sh`: `dirlist` (with `list_dir`, `sort_newest` and `resolve_glob_url`) and `dateprobe` are cases in `resolve_latest_asset`, and static ISOs use the same static manager as AppImages and worlds (`static_head`). Static ISOs now download from where the URL redirected to, the URL whose name the checksum was looked up for, instead of following the redirect again; a relative checksum still sits next to the cfg's `url`. `-d` shows `latest (MANAGER)` and `download URL` for ISOs like the other two *(Claude, directed by user)*
 - **common.sh, update-isos.sh:** Static items show their version as `static-SIZE-ETAG-NAME` (was `static-SIZE`, or the ETag without a size, and the file name for ISOs), leaving out what the server didn't send; ISO cfgs now save `current_version` too, and static ones `content_length`, `last_modified` and `etag` *(Claude, directed by user)*
@@ -20,7 +23,12 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** Each updater's required commands are listed in one `case` in `require_cmds` (`common.sh`); `main` passes its type (`app`, `apw`, `iso`) instead of the command names *(Claude, directed by user)*
 
 ### Removed
+- **update-appimages.sh:** Re-setting `installed_file` from `installed_path` on an up-to-date check; `installed_path` is built from `installed_file`, so it never changed anything *(Claude, directed by user)*
+- **update-isos.sh:** Clearing `tmp_download` after each use, which the other two don't do; the EXIT trap's `rm -f` of a file that's already gone is harmless *(Claude, directed by user)*
 - **update-isos.sh:** Reading the root folder from `ISO_ROOT` in the environment, and finding `_ISO` when `-r` names the drive's mount point; `-r` now takes the `_ISO` folder itself *(user)*
+
+### Fixed
+- **update-isos.sh:** Static ISOs asked the server for the size a second time before the free-space check; they reuse the size from the lookup *(Claude)*
 
 ---
 

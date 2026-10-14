@@ -132,10 +132,10 @@ EOF
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
-    local new_appimage new_name
+    local rc new_appimage new_name
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
-    name="${name%.appimage.cfg}"
+    name="${name%".$ITEM_EXT.cfg"}"
 
     PROGRESS_DONE=$i
     PROGRESS_LABEL="$name"
@@ -143,7 +143,7 @@ process_item() {
     block_redraw
 
     load_cfg "$cfg_file"
-    debug "cfg: manager=${manager:-?} version=${current_version:-none} last_checked=${last_checked:-never}"
+    debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
 
     installed_path=$(find_installed "$dir")
     if [[ -n "$installed_path" ]]; then
@@ -153,25 +153,33 @@ process_item() {
     fi
 
     if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-        status_final "✓ already checked today (${current_version:-unknown})"
+        status_final "✓ already checked today (${current_version:-$installed_file})"
         [[ "$check_only" == true ]] || ensure_desktop_entry "$name" "$installed_path"
         return 0
     fi
 
-    # -f, or a first install that needs the download URL, asks GitHub for the full
-    # release list, not just "changed since?" (a static item's etag is the server's
-    # file ETag, which it still needs to compare)
+    # a 304 has no download URL, so ask for the full list when installing; -f always does
+    # (a static item's etag is the server's file ETag, which it still needs to compare)
     if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
         etag=""
+        if [[ -n "$installed_path" ]]; then
+            debug "full release list requested (-f)"
+        else
+            debug "full release list requested (not installed yet)"
+        fi
     fi
-    if ! resolve_latest_asset; then
+    resolve_latest_asset; rc=$?
+    if (( rc == 2 )); then
+        # every further GitHub request would fail the same way
+        say "  ✗ stopping, $(( ${#cfg_files[@]} - i - 1 )) more $ITEM_EXT(s) not checked"
+        return 2
+    elif (( rc )); then
         return 0
     fi
 
     if [[ -n "$installed_path" ]] && is_up_to_date "$installed_path"; then
-        status_final "✓ up to date (${current_version:-$latest_tag})"
+        status_final "✓ up to date (${latest_tag:-$installed_file})"
         [[ "$check_only" == true ]] && return 0
-        installed_file="${installed_path##*/}"
         save_update_metadata "$cfg_file"
         ensure_desktop_entry "$name" "$installed_path"
         return 0
@@ -179,7 +187,7 @@ process_item() {
 
     # -c: report it, download and write nothing
     if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: $latest_tag ($asset_name)"
+        status_final "⬆ update available: $(shown_version "$asset_name")"
         return 0
     fi
 
@@ -268,7 +276,7 @@ process_item() {
 
     installed_file="$new_name"
     save_update_metadata "$cfg_file"
-    status_final "✓ updated to $latest_tag"
+    status_final "✓ updated to $(shown_version "$installed_file")"
 }
 
 # Picks this updater's settings in lib/update-tools.

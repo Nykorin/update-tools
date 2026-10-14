@@ -790,6 +790,17 @@ resolve_latest_asset() {
     return 0
 }
 
+# The version to show for a result: latest_tag, plus file name $1 in brackets
+# when the tag doesn't already include it (a static tag ends in the name, a
+# dirlist tag is the name).
+shown_version() {
+    local shown="${latest_tag:-}" file="${1:-}"
+    if [[ -n "$file" && "$shown" != *"$file"* ]]; then
+        shown="${shown:+$shown (}$file${shown:+)}"
+    fi
+    printf '%s\n' "$shown"
+}
+
 # Returns 0 if the item is already up to date.
 # $1 = the installed file, hashed once for github cfgs saved before asset_digest.
 is_up_to_date() {
