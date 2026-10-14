@@ -19,58 +19,6 @@ cleanup() {
     return 0
 }
 
-# Names in a server's directory listing, folders with a trailing "/". Copes with
-# plain index pages and SourceForge (absolute links ending in "/download").
-list_dir() {
-    curl -fsL "${CURL_META[@]}" "$1" | grep -oE 'href="[^"]+"' | awk '
-        { h = substr($0, 7, length($0) - 7); sub(/[?#].*/, "", h); sub(/\/download$/, "", h)
-          dir = (h ~ /\/$/); sub(/\/$/, "", h); n = split(h, p, "/"); name = p[n]
-          if (name != "" && name != "." && name != "..") print name (dir ? "/" : "") }' | sort -u
-}
-
-# The stdin entries matching glob $1, newest first, judged by the numbers in the
-# part the wildcards matched: EndeavourOS_Titan-Nova-2026.08.15 must beat
-# Ganymede-Neo-2026.01.12, and the fixed "amd64" in a name must not count.
-sort_newest() {
-    local glob="$1" name head tail
-    head="${glob%%[\[*?]*}"; tail="${glob##*\*}"
-    while IFS= read -r name; do
-        # shellcheck disable=SC2053
-        [[ "$name" == $glob ]] && printf '%s\n' "$name"
-    done | awk -v h="${#head}" -v t="${#tail}" '
-        { k = substr($0, h + 1, length($0) - h - t); gsub(/[^0-9]+/, ".", k); gsub(/^\.|\.$/, "", k)
-          print k "\t" $0 }' | sort -t $'\t' -k1,1Vr -k2,2Vr | cut -f2
-}
-
-# $1 = URL so far (ending in "/"), rest = the remaining path segments. A glob in a
-# folder falls back to the next-newest match (up to 3) when the rest finds nothing,
-# e.g. a new release folder that so far holds only a beta.
-resolve_segments() {
-    local prefix="$1" seg="$2" cand
-    shift 2
-    (( $# )) && seg+="/"
-    if [[ "$seg" != *'*'* && "$seg" != *'['* ]]; then
-        if (( $# )); then resolve_segments "$prefix$seg" "$@"; else printf '%s\n' "$prefix$seg"; fi
-        return
-    fi
-    while IFS= read -r cand; do
-        if (( $# == 0 )); then
-            printf '%s\n' "$prefix$cand"
-            return 0
-        fi
-        resolve_segments "$prefix$cand" "$@" && return 0
-    done < <(list_dir "$prefix" | sort_newest "$seg" | head -n 3)
-    return 1
-}
-
-# Expand each glob segment of URL $1 against the server's listings. Prints the URL.
-# Runs inside $(...), so the caller reports a failure: a say here would be captured.
-resolve_glob_url() {
-    local -a segs
-    IFS=/ read -ra segs <<<"${1#*://}"
-    resolve_segments "${1%%://*}://${segs[0]}/" "${segs[@]:1}"
-}
-
 # "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines ("hash  name",
 # "hash *name", "hash  ./name") and BSD lines ("SHA256 (name) = hash"), matching
 # on the file name alone (Ultramarine lists build paths); sha512 wins over sha256,
@@ -94,83 +42,51 @@ hash_file() {
     printf '%s\n' "${sum:-}"
 }
 
-# Sets iso_url (what to download), iso_name and sum_url, and for static the
-# version and server details static_head finds. Returns 1 to skip.
+# Sets iso_url (what to download), iso_name and sum_url through the shared
+# managers (static, dirlist, dateprobe). Returns 1 to skip.
 # Sets nothing_newer=1 when dateprobe found no build past the installed one.
 resolve_iso() {
-    local dir_url cand day today_s now sum c cur_date
+    local dir_url sum
     iso_url="" iso_name="" sum_url="" nothing_newer=0
-    # only static sets these; clear the previous item's
-    latest_tag="" remote_length="" remote_modified="" remote_etag=""
     if [[ -z "${url:-}" || -z "${checksum:-}" ]]; then
         say "⚠ ${PROGRESS_LABEL:-}: cfg needs url and checksum, skipping"
         return 1
     fi
     case "${manager:-}" in
-        dirlist)
-            if ! iso_url=$(resolve_glob_url "$url"); then
-                say "⚠ ${PROGRESS_LABEL:-}: nothing on the server matches ${url##*/}, skipping"
-                return 1
-            fi
-            iso_name="${iso_url##*/}"
-            dir_url="${iso_url%/*}/"
-            iso_url+="${download_suffix:-}"
-            ;;
-        static)
-            # the name comes from where the URL lands (Garuda's latest.iso redirects)
-            static_head "$url" || return 1
-            iso_name="$asset_name"
-            iso_url="$url"
-            dir_url="${url%/*}/"
-            ;;
-        dateprobe)
-            # no listing (Nobara's bucket): try dates from today back, stopping at
-            # the installed one; each try is one small HEAD request
-            [[ "${installed_file:-}" =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]] && cur_date="${BASH_REMATCH[0]}"
-            printf -v now '%(%s)T' -1
-            for (( day = 0; day <= ${probe_days:-90}; day++ )); do
-                printf -v today_s '%(%F)T' $(( now - day * 86400 ))
-                [[ -n "${cur_date:-}" && "$today_s" < "$cur_date" ]] && break
-                cand="${url//\{date\}/$today_s}"
-                c="$checksum"; c="${c//\{iso\}/${cand##*/}}"
-                [[ "$c" == *://* ]] || c="${cand%/*}/$c"
-                if curl -fsI "${CURL_META[@]}" -o /dev/null "$c"; then
-                    iso_url="$cand"; sum_url="$c"; break
-                fi
-            done
-            if [[ -z "$iso_url" ]]; then
-                if [[ -n "${cur_date:-}" ]]; then
-                    # nothing newer; the installed build may already be gone from the
-                    # server, so don't ask for its checksum file
-                    nothing_newer=1
-                    iso_name="$installed_file"
-                    debug "no build newer than $cur_date on the server"
-                    return 0
-                else
-                    say "⚠ ${PROGRESS_LABEL:-}: no ${url##*/} found in the last ${probe_days:-90} days, skipping"
-                    return 1
-                fi
-            fi
-            iso_name="${iso_url##*/}"
-            dir_url="${iso_url%/*}/"
-            ;;
+        static|dirlist|dateprobe) ;;
         *)
             say "⚠ ${PROGRESS_LABEL:-}: unknown or missing manager '${manager:-}', skipping"
             return 1
             ;;
     esac
-
-    if [[ -z "$sum_url" ]]; then
-        sum="$checksum"; sum="${sum//\{iso\}/$iso_name}"
-        [[ "$sum" == *://* ]] || sum="$dir_url$sum"
-        if [[ "$sum" == *'*'* || "$sum" == *'['* ]]; then
-            if ! sum=$(resolve_glob_url "$sum"); then
-                say "⚠ ${PROGRESS_LABEL:-}: no checksum file matches ${sum##*/}, skipping"
-                return 1
-            fi
-        fi
-        sum_url="$sum"
+    resolve_latest_asset || return 1
+    if (( remote_unchanged )); then
+        # the installed build may already be gone from the server, so don't ask
+        # for its checksum file
+        nothing_newer=1
+        iso_name="$installed_file"
+        return 0
     fi
+    iso_name="$asset_name"
+    iso_url="$asset_url"
+    # a relative checksum is next to the ISO; for static, next to the cfg's URL
+    # (Garuda's latest.iso.sha256 sits beside latest.iso, not where it redirects)
+    if [[ "$manager" == static ]]; then
+        dir_url="${url%/*}/"
+    else
+        dir_url="${asset_url%"${download_suffix:-}"}"
+        dir_url="${dir_url%/*}/"
+    fi
+
+    sum="$checksum"; sum="${sum//\{iso\}/$iso_name}"
+    [[ "$sum" == *://* ]] || sum="$dir_url$sum"
+    if [[ "$sum" == *'*'* || "$sum" == *'['* ]]; then
+        if ! sum=$(resolve_glob_url "$sum"); then
+            say "⚠ ${PROGRESS_LABEL:-}: no checksum file matches ${sum##*/}, skipping"
+            return 1
+        fi
+    fi
+    sum_url="$sum"
 }
 
 # One cfg: check it, and update it if needed.
@@ -222,8 +138,6 @@ process_item() {
         return 0
     fi
 
-    debug "newest: $iso_name"
-    debug "download URL: $iso_url"
     debug "checksum file: $sum_url"
     if ! sum_text=$(curl -fsL "${CURL_META[@]}" "$sum_url"); then
         say "⚠ $name: could not fetch checksum file $sum_url, skipping"

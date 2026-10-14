@@ -532,6 +532,61 @@ pick_gitlab_asset() {
         end' <<<"$json" 2>/dev/null
 }
 
+# ---------------------------------------------------------------------------
+# dirlist manager: globs in a URL, resolved against the server's listings
+# ---------------------------------------------------------------------------
+# Names in a server's directory listing, folders with a trailing "/". Copes with
+# plain index pages and SourceForge (absolute links ending in "/download").
+list_dir() {
+    curl -fsL "${CURL_META[@]}" "$1" | grep -oE 'href="[^"]+"' | awk '
+        { h = substr($0, 7, length($0) - 7); sub(/[?#].*/, "", h); sub(/\/download$/, "", h)
+          dir = (h ~ /\/$/); sub(/\/$/, "", h); n = split(h, p, "/"); name = p[n]
+          if (name != "" && name != "." && name != "..") print name (dir ? "/" : "") }' | sort -u
+}
+
+# The stdin entries matching glob $1, newest first, judged by the numbers in the
+# part the wildcards matched: EndeavourOS_Titan-Nova-2026.08.15 must beat
+# Ganymede-Neo-2026.01.12, and the fixed "amd64" in a name must not count.
+sort_newest() {
+    local glob="$1" entry head tail
+    head="${glob%%[\[*?]*}"; tail="${glob##*\*}"
+    while IFS= read -r entry; do
+        # shellcheck disable=SC2053
+        [[ "$entry" == $glob ]] && printf '%s\n' "$entry"
+    done | awk -v h="${#head}" -v t="${#tail}" '
+        { k = substr($0, h + 1, length($0) - h - t); gsub(/[^0-9]+/, ".", k); gsub(/^\.|\.$/, "", k)
+          print k "\t" $0 }' | sort -t $'\t' -k1,1Vr -k2,2Vr | cut -f2
+}
+
+# $1 = URL so far (ending in "/"), rest = the remaining path segments. A glob in a
+# folder falls back to the next-newest match (up to 3) when the rest finds nothing,
+# e.g. a new release folder that so far holds only a beta.
+resolve_segments() {
+    local prefix="$1" seg="$2" cand
+    shift 2
+    (( $# )) && seg+="/"
+    if [[ "$seg" != *'*'* && "$seg" != *'['* ]]; then
+        if (( $# )); then resolve_segments "$prefix$seg" "$@"; else printf '%s\n' "$prefix$seg"; fi
+        return
+    fi
+    while IFS= read -r cand; do
+        if (( $# == 0 )); then
+            printf '%s\n' "$prefix$cand"
+            return 0
+        fi
+        resolve_segments "$prefix$cand" "$@" && return 0
+    done < <(list_dir "$prefix" | sort_newest "$seg" | head -n 3)
+    return 1
+}
+
+# Expand each glob segment of URL $1 against the server's listings. Prints the URL.
+# Runs inside $(...), so the caller reports a failure: a say here would be captured.
+resolve_glob_url() {
+    local -a segs
+    IFS=/ read -ra segs <<<"${1#*://}"
+    resolve_segments "${1%%://*}://${segs[0]}/" "${segs[@]:1}"
+}
+
 # The static manager's lookup, shared with update-isos: one HEAD request that
 # follows redirects. Sets asset_url (where it landed), asset_name, remote_length,
 # remote_modified, remote_etag, and latest_tag: static-SIZE-ETAG-NAME, leaving
@@ -566,7 +621,8 @@ static_head() {
 # ---------------------------------------------------------------------------
 # Shared asset resolution
 # Sets: latest_tag  asset_url  asset_name  remote_length  remote_modified
-#       remote_digest  remote_etag  remote_unchanged (github only)
+#       remote_digest  remote_etag  remote_unchanged (github 304, dateprobe
+#       with nothing newer)
 # Returns 0 on success, 1 on failure, 2 if GitHub is rate limiting
 # ---------------------------------------------------------------------------
 resolve_latest_asset() {
@@ -671,6 +727,52 @@ resolve_latest_asset() {
             static_head "$url" || return 1
             ;;
 
+        dirlist)
+            require_keys "dirlist manager" url || return 1
+            if ! asset_url=$(resolve_glob_url "$url"); then
+                say "⚠ ${PROGRESS_LABEL:-}: nothing on the server matches ${url##*/}, skipping"
+                return 1
+            fi
+            asset_name="${asset_url##*/}"
+            asset_url+="${download_suffix:-}"
+            latest_tag="$asset_name"
+            ;;
+
+        dateprobe)
+            require_keys "dateprobe manager" url || return 1
+            # no listing (Nobara's bucket): try dates from today back, stopping at the
+            # installed one; each try is one small HEAD request, on the checksum file
+            # when the cfg names one
+            local cand probe day day_s now cur_date=""
+            [[ "${installed_file:-}" =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]] && cur_date="${BASH_REMATCH[0]}"
+            printf -v now '%(%s)T' -1
+            for (( day = 0; day <= ${probe_days:-90}; day++ )); do
+                printf -v day_s '%(%F)T' $(( now - day * 86400 ))
+                [[ -n "$cur_date" && "$day_s" < "$cur_date" ]] && break
+                cand="${url//\{date\}/$day_s}"
+                probe="$cand"
+                if [[ -n "${checksum:-}" ]]; then
+                    probe="${checksum//\{iso\}/${cand##*/}}"
+                    [[ "$probe" == *://* ]] || probe="${cand%/*}/$probe"
+                fi
+                if curl -fsI "${CURL_META[@]}" -o /dev/null "$probe"; then
+                    asset_url="$cand"
+                    break
+                fi
+            done
+            if [[ -z "$asset_url" && -n "$cur_date" ]]; then
+                # nothing newer: what's installed is the latest
+                latest_tag="$installed_file" asset_name="$installed_file" remote_unchanged=1
+                debug "no build newer than $cur_date on the server"
+                return 0
+            elif [[ -z "$asset_url" ]]; then
+                say "⚠ ${PROGRESS_LABEL:-}: no ${url##*/} found in the last ${probe_days:-90} days, skipping"
+                return 1
+            fi
+            asset_name="${asset_url##*/}"
+            latest_tag="$asset_name"
+            ;;
+
         *)
             say "⚠ ${PROGRESS_LABEL:-}: unknown or missing manager '${manager:-}', skipping"
             return 1
@@ -691,6 +793,7 @@ resolve_latest_asset() {
 # $1 = the installed file, hashed once for github cfgs saved before asset_digest.
 is_up_to_date() {
     local sum
+    (( remote_unchanged )) && return 0
     case "$manager" in
         static)
             debug "size ${remote_length:-?} vs saved ${content_length:-none}, modified ${remote_modified:-?} vs saved ${last_modified:-none}, ETag ${remote_etag:-none} vs saved ${etag:-none}"
@@ -707,7 +810,6 @@ is_up_to_date() {
             (( known && ! changed ))
             ;;
         github)
-            (( remote_unchanged )) && return 0
             debug "tag ${latest_tag:-?} vs installed ${current_version:-none}"
             [[ "$latest_tag" == "${current_version:-}" ]] || return 1
             # same tag, but rolling releases (latest, continuous) re-upload the asset
