@@ -8,8 +8,9 @@
 
 # Each mode's settings, by ITEM_TYPE: ITEM_TITLE (its heading under -m all),
 # ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg), ITEM_MODE (for installed files;
-# empty leaves the mode alone), DEFAULT_DIR, and NOT_FOUND_HINT (the end of the
-# folder-not-found error).
+# empty leaves the mode alone), DEFAULT_DIR, and for the folder-not-found error
+# NOT_FOUND_HINT (may be empty) and ROOT_HINT (the -r advice, left out under -m
+# all, which refuses -r).
 # shellcheck disable=SC2034  # used by the modules and the shared libraries
 item_settings() {
     case "$ITEM_TYPE" in
@@ -18,7 +19,8 @@ item_settings() {
             ITEM_EXT="appimage"
             ITEM_MODE="755"
             DEFAULT_DIR="$HOME/AppImages"
-            NOT_FOUND_HINT="Point to the AppImages folder with -r DIR."
+            NOT_FOUND_HINT=""
+            ROOT_HINT="Point to the AppImages folder with -r DIR."
             ;;
 
         apw)
@@ -26,7 +28,8 @@ item_settings() {
             ITEM_EXT="apworld"
             ITEM_MODE="644"
             DEFAULT_DIR="/mnt/games_rando/Archipelago/custom_worlds"
-            NOT_FOUND_HINT="Is the games drive mounted? Point to the folder with -r DIR."
+            NOT_FOUND_HINT="Is the games drive mounted?"
+            ROOT_HINT="Point to the folder with -r DIR."
             ;;
 
         iso)
@@ -35,7 +38,8 @@ item_settings() {
             # exFAT has no modes
             ITEM_MODE=""
             DEFAULT_DIR="/mnt/ventoy/_ISO"
-            NOT_FOUND_HINT="Is the Ventoy drive mounted? Point to it with -r DIR."
+            NOT_FOUND_HINT="Is the Ventoy drive mounted?"
+            ROOT_HINT="Point to it with -r DIR."
             ;;
 
         *)
@@ -245,7 +249,8 @@ run_mode() {
     dir="${ROOT_ARG:-$DEFAULT_DIR}"
     dir="${dir%/}"
     if [[ ! -d "$dir" ]]; then
-        echo "ERROR: $dir not found. $NOT_FOUND_HINT" >&2
+        [[ "$MODE" == all ]] && ROOT_HINT=""
+        echo "ERROR: $dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}${ROOT_HINT:+ $ROOT_HINT}" >&2
         exit 1
     fi
     CFG_DIR="$dir/.cfg"
