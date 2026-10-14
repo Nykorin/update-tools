@@ -65,7 +65,7 @@ unbundle_apworld() {
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
-    local rc target target_name
+    local rc new_file target target_name
     local -a top_dirs
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
@@ -172,8 +172,10 @@ process_item() {
     [[ -n "$installed_path" && "$installed_path" != "$target" && -f "$installed_path" ]] && \
         backup_file "$installed_path"
 
-    mv "$tmp_download" "$target"
+    new_file="$tmp_download"
+    mv "$new_file" "$target"
     chmod 644 "$target"
+    debug "installed as ${target##*/}"
     [[ -n "$installed_path" && "$installed_path" != "$target" ]] && debug "replaced ${installed_path##*/}; old copies in $OLD_DIR/"
 
     installed_file="$target_name"

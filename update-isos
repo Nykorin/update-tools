@@ -93,7 +93,7 @@ resolve_iso() {
 process_item() {
     local i="$1"
     local sum_text algo want got size avail sum_name
-    local iso_url iso_name sum_url nothing_newer
+    local iso_url iso_name sum_url nothing_newer new_file target
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%".$ITEM_EXT.cfg"}"
@@ -212,8 +212,11 @@ process_item() {
         return 0
     fi
 
-    mv -f "$tmp_download" "$dir/$iso_name"
-    [[ -n "$installed_path" && "$installed_path" != "$dir/$iso_name" ]] && rm -f "$installed_path"
+    new_file="$tmp_download"
+    target="$dir/$iso_name"
+    mv -f "$new_file" "$target"
+    debug "installed as ${target##*/}"
+    [[ -n "$installed_path" && "$installed_path" != "$target" ]] && rm -f "$installed_path"
 
     sum_name="${checksum_save:-${sum_url##*/}}"
     sum_name="${sum_name//\{iso\}/$iso_name}"

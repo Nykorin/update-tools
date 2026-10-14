@@ -132,7 +132,7 @@ EOF
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
-    local rc new_appimage new_name
+    local rc new_file new_name target
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%".$ITEM_EXT.cfg"}"
@@ -213,7 +213,7 @@ process_item() {
     debug "downloaded to $tmp_download"
 
     # archived AppImages: extract, then install the AppImage inside
-    new_appimage="$tmp_download"
+    new_file="$tmp_download"
     new_name="$asset_name"
     tmp_extract_dir=""
     case "$asset_name" in
@@ -226,10 +226,10 @@ process_item() {
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
                 return 0
             fi
-            new_appimage=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
-            debug "archive holds ${new_appimage:-no AppImage}"
-            new_name="${new_appimage##*/}"
-            if [[ -z "$new_appimage" ]]; then
+            new_file=$(find "$tmp_extract_dir" -iname "*.appimage" -type f -print -quit)
+            debug "archive holds ${new_file:-no AppImage}"
+            new_name="${new_file##*/}"
+            if [[ -z "$new_file" ]]; then
                 say "  ✗ No AppImage found inside extracted archive for $name"
                 rm -f "$tmp_download"; rm -rf "$tmp_extract_dir"
                 return 0
@@ -248,7 +248,7 @@ process_item() {
         fi
     fi
 
-    local target="$dir/$new_name"
+    target="$dir/$new_name"
     local -a aside=()
     [[ -n "$installed_path" ]] && aside+=("$installed_path")
     # a stray file already using the new name is backed up too, never overwritten
@@ -256,7 +256,7 @@ process_item() {
     (( ${#aside[@]} )) && stash_old "${aside[@]}"
 
     # all moves are renames on one disk; should the last still fail, put everything back
-    if ! mv "$new_appimage" "$target"; then
+    if ! mv "$new_file" "$target"; then
         (( ${#aside[@]} )) && unstash
         say "  ✗ $name: could not install the new AppImage, kept the old one"
         rm -f "$tmp_download"
@@ -270,7 +270,7 @@ process_item() {
     chmod +x "$target"
     rm -f "$tmp_download"
     [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
-    debug "installed as $new_name"
+    debug "installed as ${target##*/}"
 
     generate_desktop_entry "$name" "$target"
 
