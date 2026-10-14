@@ -20,6 +20,8 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** In debug mode each item's time and the run's total are shown, measured with bash's `time` keyword *(Claude, directed by user)*
 
 ### Changed
+- **update-isos.sh:** ISO cfgs live in `_ISO/.cfg/` like the other two updaters' cfgs instead of next to each ISO; a new `folder` key names the ISO's folder relative to the root, and a missing folder is created on first install. The 17 cfgs on the Ventoy drive were moved to match *(Claude, directed by user)*
+- **all scripts:** The GitHub headers file, the EXIT trap and the token load are one shared `start_run` in `common.sh`; the trap removes the headers file, then calls the script's own `cleanup` *(Claude, directed by user)*
 - **all scripts:** The help text is one shared `usage` in `common.sh`; each updater fills in `USAGE_ABOUT`, `USAGE_ITEM` and `USAGE_ROOT` (the output is unchanged) *(Claude, directed by user)*
 - **update-appimages.sh, update-apworlds.sh:** The item folder is `dir` in all three updaters (was `APPIMAGES_DIR` and `WORLDS_DIR`); `WORLDS_DIR` stays as the environment variable that points update-apworlds at another folder *(Claude, directed by user)*
 - **update-appimages.sh, update-apworlds.sh:** The item-name variable is `name` in all three updaters (was `app_name` and `world_name`) *(Claude, directed by user)*
@@ -39,6 +41,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-appimages.sh:** The fallback that found an AppImage named after its cfg (`NAME.appimage`) when the cfg had no `installed_file`; every cfg now has one, and a cfg without it is a first install *(Claude, directed by user)*
 
 ### Fixed
+- **progress.sh:** Ctrl+C during a download left `curl_run`'s output log in `/tmp`; the shared EXIT trap now removes it *(Claude)*
 - **common.sh:** `load_cfg` accepts only known keys and reports others; any `key=value` used to be set as a variable, so `dir=` in an ISO cfg moved where the ISO was installed *(Claude)*
 - **common.sh:** A static or jsonfeed cfg missing a required key, or a feed version without a dot, aborted the whole run (`unbound variable`); the item is now skipped with a named message *(Claude)*
 - **all scripts:** Network requests had no timeouts, so a server that never answered hung the run forever; requests now time out and downloads give up after 60 s of stalling *(Claude)*

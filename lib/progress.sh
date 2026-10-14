@@ -67,21 +67,23 @@ curl_handback()  { if (( PROGRESS_ON )); then printf '\033[1A'; block_redraw; fi
 # A failed curl leaves its bar plus an error that can wrap or add a blank
 # line, so count the rows it used to find line 1 again. Copy goes to stdout,
 # where the block is.
+# The log is global so the EXIT trap can remove it after a Ctrl+C.
 CURL_ROWS=0
 CURL_BLANK=0
+CURL_LOG=""
 curl_run() {
     (( PROGRESS_ON )) || { curl "$@"; return; }
-    local log rc
-    log=$(mktemp)
-    COLUMNS="$PROGRESS_COLS" curl "$@" 2>&1 | tee "$log"
+    local rc
+    CURL_LOG=$(mktemp)
+    COLUMNS="$PROGRESS_COLS" curl "$@" 2>&1 | tee "$CURL_LOG"
     rc=${PIPESTATUS[0]}
     # rows = line breaks + wraps; only the text after the last \r is still on screen
     read -r CURL_ROWS CURL_BLANK < <(awk -v cols="$PROGRESS_COLS" '
         { sub(/\r+$/, ""); sub(/.*\r/, ""); n = length($0)
           if (n) { wraps += int((n - 1) / cols); blank = 0 } else blank++ }
-        END { print NR + wraps, blank + 0 }' "$log")
-    [[ -n "$(tail -c1 "$log")" ]] && (( CURL_ROWS-- ))
-    rm -f "$log"
+        END { print NR + wraps, blank + 0 }' "$CURL_LOG")
+    [[ -n "$(tail -c1 "$CURL_LOG")" ]] && (( CURL_ROWS-- ))
+    rm -f "$CURL_LOG"
     return "$rc"
 }
 

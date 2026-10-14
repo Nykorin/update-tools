@@ -12,7 +12,6 @@ source "$SCRIPT_DIR/lib/common.sh"
 tmp_download="" tmp_extract_dir="" DESKTOP_TMP=""
 
 cleanup() {
-    rm -f "$GITHUB_HEADERS"
     [[ -n "$tmp_download" ]] && rm -f "$tmp_download"
     [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
     [[ -n "$DESKTOP_TMP" ]] && rm -rf "$DESKTOP_TMP"
@@ -303,16 +302,15 @@ main() {
     ICONS_DIR="$dir/.icons"
     OLD_DIR="$dir/.old"
 
-    require_cmds curl jq
     TMP_DIR="$dir/.tmp"
+
+    require_cmds curl jq
     mkdir -p "$CFG_DIR" "$ICONS_DIR" "$OLD_DIR"
     # anything left here is from an interrupted earlier run
     rm -rf "$TMP_DIR"
     mkdir -p "$TMP_DIR"
 
-    GITHUB_HEADERS=$(mktemp)
-    trap cleanup EXIT
-    load_github_token
+    start_run
 
     shopt -s nullglob
     local cfg_files=("$CFG_DIR"/*.appimage.cfg)

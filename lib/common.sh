@@ -141,7 +141,7 @@ CFG_KEYS=(
     install_name apworld_filename installed_file last_checked
     asset_digest etag
     checksum checksum_save download_suffix probe_days
-    iso_hash checksum_file
+    folder iso_hash checksum_file
 )
 
 load_cfg() {
@@ -392,6 +392,16 @@ rate_summary() {
     (( GITHUB_REMAINING * 10 <= GITHUB_LIMIT )) && warn="⚠ "
     [[ "$GITHUB_RESET" =~ ^[0-9]+$ ]] && printf -v when ', resets %(%H:%M)T' "$GITHUB_RESET"
     STATUS="${warn}GitHub API: $GITHUB_REMAINING/$GITHUB_LIMIT requests left${when} (used $GITHUB_CALLS this run)"
+}
+
+# Setup every updater shares: the EXIT trap, which removes the GitHub headers
+# file and curl_run's log, then runs the script's own cleanup(); and the GitHub
+# token and headers file (update-isos never contacts GitHub, so they simply go
+# unused there).
+start_run() {
+    GITHUB_HEADERS=$(mktemp)
+    trap 'rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}"; cleanup' EXIT
+    load_github_token
 }
 
 # Shared token for both scripts.
