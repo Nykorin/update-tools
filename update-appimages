@@ -20,27 +20,6 @@ cleanup() {
     return 0
 }
 
-# Upstream names carry versions, so one folder per app keeps .old/ at one
-# previous version each instead of growing with every update. The current
-# file(s) wait in a pending folder until the new AppImage is in place, so a
-# failed install never costs the existing backup.
-stash_old() {
-    local pending="$OLD_DIR/.$name.pending"
-    rm -rf "$pending"
-    mkdir -p "$pending"
-    mv "$@" "$pending/"
-}
-keep_stash() {
-    rm -rf "${OLD_DIR:?}/$name"
-    mv "$OLD_DIR/.$name.pending" "$OLD_DIR/$name"
-}
-# Put the stashed file(s) back where they were.
-unstash() {
-    local pending="$OLD_DIR/.$name.pending" f
-    for f in "$pending"/*; do mv "$f" "$dir/"; done
-    rmdir "$pending"
-}
-
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
 ensure_desktop_entry() {
@@ -249,28 +228,29 @@ process_item() {
     fi
 
     target="$dir/$new_name"
-    local -a aside=()
-    [[ -n "$installed_path" ]] && aside+=("$installed_path")
-    # a stray file already using the new name is backed up too, never overwritten
-    [[ "$target" != "$installed_path" && -e "$target" ]] && aside+=("$target")
-    (( ${#aside[@]} )) && stash_old "${aside[@]}"
 
-    # all moves are renames on one disk; should the last still fail, put everything back
-    if ! mv "$new_file" "$target"; then
-        (( ${#aside[@]} )) && unstash
+    # the installed version (and a stray file already using the new name) waits in
+    # .tmp until the new one is in place
+    if ! set_aside "$installed_path" "$target"; then
+        say "  ✗ $name: could not move the old version aside, nothing changed"
+        rm -f "$tmp_download"
+        [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+        return 0
+    fi
+
+    # a rename on one disk; should it still fail, put the old version back
+    if ! mv -f "$new_file" "$target"; then
+        restore_previous
         say "  ✗ $name: could not install ${target##*/}, kept the old one"
         rm -f "$tmp_download"
         [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
         return 0
     fi
-    if (( ${#aside[@]} )); then
-        keep_stash
-        debug "previous version moved to $OLD_DIR/$name/"
-    fi
-    chmod +x "$target"
+    [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
     rm -f "$tmp_download"
     [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
     debug "installed as ${target##*/}"
+    drop_previous
 
     generate_desktop_entry "$name" "$target"
 
@@ -284,10 +264,11 @@ ITEM_TYPE="app"
 
 prepare_dir() {
     ICONS_DIR="$dir/.icons"
-    OLD_DIR="$dir/.old"
     TMP_DIR="$dir/.tmp"
-    mkdir -p "$ICONS_DIR" "$OLD_DIR"
-    # anything left here is from an interrupted earlier run
+    mkdir -p "$ICONS_DIR"
+    # anything left here is from an interrupted earlier run: an old version goes
+    # back first, the rest is thrown away
+    recover_previous
     rm -rf "$TMP_DIR"
     mkdir -p "$TMP_DIR"
 }

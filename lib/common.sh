@@ -141,13 +141,6 @@ require_cmds() {
     done
 }
 
-# Move a file into $OLD_DIR (creates the directory if needed).
-# Caller must set OLD_DIR before calling.
-backup_file() {
-    mkdir -p "$OLD_DIR"
-    mv "$1" "$OLD_DIR/${1##*/}"
-}
-
 # ---------------------------------------------------------------------------
 # Config handling
 # ---------------------------------------------------------------------------
@@ -414,12 +407,12 @@ rate_summary() {
 }
 
 # Setup every updater shares: the EXIT trap, which removes the GitHub headers
-# file, curl_run's log and timed's files, then runs the script's own cleanup();
-# and the GitHub token and headers file (update-isos never contacts GitHub, so
-# they simply go unused there).
+# file, curl_run's log and timed's files, puts back an old version still set
+# aside, then runs the script's own cleanup(); and the GitHub token and headers
+# file (update-isos never contacts GitHub, so they simply go unused there).
 start_run() {
     GITHUB_HEADERS=$(mktemp)
-    trap 'rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}"; cleanup' EXIT
+    trap 'rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}"; restore_previous; cleanup' EXIT
     load_github_token
 }
 
@@ -804,6 +797,80 @@ shown_version() {
         shown="${shown:+$shown (}$file${shown:+)}"
     fi
     printf '%s\n' "$shown"
+}
+
+# ---------------------------------------------------------------------------
+# The old version during an install: renamed into TMP_DIR (always ROOT/.tmp, on
+# the same disk) right before the new one goes in, deleted once it's in place,
+# renamed back if the install fails or the run is interrupted. It keeps its
+# path below the root and gets a .previous suffix, which never ends in .iso, so
+# Ventoy can't list it.
+# ---------------------------------------------------------------------------
+ASIDE=()
+
+previous_path() {
+    printf '%s\n' "$TMP_DIR/${1#"${TMP_DIR%/*}/"}.previous"
+}
+
+# Moves each existing FILE aside (empty and missing ones are skipped). On a
+# failure, puts back what it moved and returns 1.
+set_aside() {
+    local f p seen
+    ASIDE=()
+    for f in "$@"; do
+        [[ -n "$f" && -e "$f" ]] || continue
+        # the installed file is often the target too
+        for seen in "${ASIDE[@]}"; do [[ "$seen" == "$f" ]] && continue 2; done
+        p=$(previous_path "$f")
+        if ! { mkdir -p "${p%/*}" && mv -f "$f" "$p"; }; then
+            prune_previous "$p"
+            restore_previous
+            return 1
+        fi
+        ASIDE+=("$f")
+    done
+    return 0
+}
+
+# Removes the folders previous_path made for $1, up to TMP_DIR, once empty.
+prune_previous() {
+    local d="${1%/*}"
+    while [[ "$d" == "$TMP_DIR"/* ]] && rmdir "$d" 2>/dev/null; do d="${d%/*}"; done
+}
+
+restore_previous() {
+    local f p
+    for f in "${ASIDE[@]}"; do
+        p=$(previous_path "$f")
+        mv -f "$p" "$f" && prune_previous "$p"
+    done
+    ASIDE=()
+}
+
+drop_previous() {
+    local f p
+    for f in "${ASIDE[@]}"; do
+        p=$(previous_path "$f")
+        rm -f "$p" && prune_previous "$p"
+        debug "deleted the old version, ${f##*/}"
+    done
+    ASIDE=()
+}
+
+# After a run that was killed outright: an old version whose file is missing
+# goes back; one whose file is there (the new one went in) is deleted.
+recover_previous() {
+    local p f
+    [[ -d "$TMP_DIR" ]] || return 0
+    while IFS= read -r -d '' p; do
+        f="${TMP_DIR%/*}/${p#"$TMP_DIR/"}"; f="${f%.previous}"
+        if [[ -e "$f" ]]; then
+            rm -f "$p"
+        else
+            mv "$p" "$f" && say "⚠ put back ${f##*/}, which an interrupted run had moved aside"
+        fi
+        prune_previous "$p"
+    done < <(find "$TMP_DIR" -type f -name '*.previous' -print0)
 }
 
 # Returns 0 if the item is already up to date.

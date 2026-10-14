@@ -5,7 +5,8 @@
 # leftovers), cleanup (for the EXIT trap) and process_item, then calls main "$@".
 
 # Each updater's settings, by ITEM_TYPE: ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg,
-# and the help text calls an item that), USAGE_ABOUT and USAGE_ROOT for usage in
+# and the help text calls an item that), ITEM_MODE (for installed files; empty
+# leaves the mode alone), USAGE_ABOUT and USAGE_ROOT for usage in
 # common.sh, DEFAULT_DIR, and NOT_FOUND_HINT (the end of the folder-not-found
 # error). The help text's continuation lines start at column 0 because they're
 # printed as written.
@@ -14,6 +15,7 @@ item_settings() {
     case "$ITEM_TYPE" in
         app)
             ITEM_EXT="appimage"
+            ITEM_MODE="755"
             USAGE_ABOUT="Check and update the AppImages in ~/AppImages, one NAME.appimage.cfg per app
 in ~/AppImages/.cfg. A cfg whose AppImage isn't there yet is installed."
             # shellcheck disable=SC2088  # a literal ~ for the help text, not a path
@@ -25,6 +27,7 @@ in ~/AppImages/.cfg. A cfg whose AppImage isn't there yet is installed."
 
         apw)
             ITEM_EXT="apworld"
+            ITEM_MODE="644"
             USAGE_ABOUT="Check and update the Archipelago worlds in
 /mnt/games_rando/Archipelago/custom_worlds, one NAME.apworld.cfg per world in
 its .cfg folder. A cfg whose world isn't there yet is installed."
@@ -35,6 +38,8 @@ its .cfg folder. A cfg whose world isn't there yet is installed."
 
         iso)
             ITEM_EXT="iso"
+            # exFAT has no modes
+            ITEM_MODE=""
             USAGE_ABOUT="Check and update the ISOs on the Ventoy drive (/mnt/ventoy/_ISO), one
 NAME.iso.cfg per ISO in its .cfg folder, whose folder= key names the ISO's
 folder below it (like Linux/Fedora/Fedora). Every download is checksum-verified

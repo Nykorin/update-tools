@@ -65,8 +65,7 @@ unbundle_apworld() {
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
-    local rc new_file target target_name old
-    local -a backed=()
+    local rc new_file target target_name
     local -a top_dirs
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
@@ -169,23 +168,27 @@ process_item() {
     fi
 
     target="$dir/$target_name"
-    [[ -f "$target" ]] && backup_file "$target" && backed+=("$target")
-    [[ -n "$installed_path" && "$installed_path" != "$target" && -f "$installed_path" ]] && \
-        backup_file "$installed_path" && backed+=("$installed_path")
 
     new_file="$tmp_download"
-    # a rename on one disk; should it still fail, put the backups back
-    if ! mv "$new_file" "$target"; then
-        for old in "${backed[@]}"; do
-            mv "$OLD_DIR/${old##*/}" "$old"
-        done
+    # the installed version (and a stray file already using the new name) waits in
+    # .tmp until the new one is in place
+    if ! set_aside "$installed_path" "$target"; then
+        say "  ✗ $name: could not move the old version aside, nothing changed"
+        rm -f "$tmp_download"
+        return 0
+    fi
+
+    # a rename on one disk; should it still fail, put the old version back
+    if ! mv -f "$new_file" "$target"; then
+        restore_previous
         say "  ✗ $name: could not install ${target##*/}, kept the old one"
         rm -f "$tmp_download"
         return 0
     fi
-    chmod 644 "$target"
+    [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
+    rm -f "$tmp_download"
     debug "installed as ${target##*/}"
-    [[ -n "$installed_path" && "$installed_path" != "$target" ]] && debug "replaced ${installed_path##*/}; old copies in $OLD_DIR/"
+    drop_previous
 
     installed_file="$target_name"
     save_update_metadata "$cfg_file"
@@ -196,10 +199,10 @@ process_item() {
 ITEM_TYPE="apw"
 
 prepare_dir() {
-    OLD_DIR="$dir/.old"
     TMP_DIR="$dir/.tmp"
-    mkdir -p "$OLD_DIR" "$TMP_DIR"
-    # left over from an interrupted earlier run
+    mkdir -p "$TMP_DIR"
+    # left over from an interrupted earlier run: an old version goes back first
+    recover_previous
     rm -f "$TMP_DIR"/download.* "$TMP_DIR"/extracted.*
 }
 

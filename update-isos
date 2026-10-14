@@ -212,16 +212,28 @@ process_item() {
         return 0
     fi
 
-    new_file="$tmp_download"
     target="$dir/$iso_name"
-    # the old ISO is deleted only once the new one is in place
+
+    new_file="$tmp_download"
+    # the installed version (and a stray file already using the new name) waits in
+    # .tmp until the new one is in place
+    if ! set_aside "$installed_path" "$target"; then
+        say "  ✗ $name: could not move the old version aside, nothing changed"
+        rm -f "$tmp_download"
+        return 0
+    fi
+
+    # a rename on one disk; should it still fail, put the old version back
     if ! mv -f "$new_file" "$target"; then
+        restore_previous
         say "  ✗ $name: could not install ${target##*/}, kept the old one"
         rm -f "$tmp_download"
         return 0
     fi
+    [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
+    rm -f "$tmp_download"
     debug "installed as ${target##*/}"
-    [[ -n "$installed_path" && "$installed_path" != "$target" ]] && rm -f "$installed_path"
+    drop_previous
 
     sum_name="${checksum_save:-${sum_url##*/}}"
     sum_name="${sum_name//\{iso\}/$iso_name}"
@@ -239,7 +251,11 @@ ITEM_TYPE="iso"
 prepare_dir() {
     # process_item points dir at each ISO's folder, so keep the root
     ISO_DIR="$dir"
-    # left over from a run that was killed outright (Ctrl+C cleans up after itself)
+    # old versions wait here during an update (as .previous, which Ventoy doesn't list)
+    TMP_DIR="$dir/.tmp"
+    # left over from a run that was killed outright (Ctrl+C cleans up after itself):
+    # an old version goes back, a half-downloaded ISO goes
+    recover_previous
     find "$dir" -mindepth 1 -name '.*.iso.part' -type f -delete
 }
 
