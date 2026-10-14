@@ -8,7 +8,11 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ## [2026-10-14]
 
+### Added
+- **lib/update-tools:** One `main` and `run_items` for all three updaters, sourced like `common.sh`; each updater now only sets `ITEM_TYPE`, `ITEM_EXT`, `DEFAULT_DIR` and `NOT_FOUND_HINT` and defines `prepare_dir` (its other folders and leftover cleanup). Output is unchanged *(Claude, directed by user)*
+
 ### Changed
+- **all scripts:** `process_item` declares its own script-specific variables (they were `main`'s locals); `APPIMAGE_DIR` and `WORLDS_DIR` are gone, as `dir` holds the folder, and update-isos keeps the root as `ISO_DIR` *(Claude, directed by user)*
 - **all scripts:** update-isos' root folder is `ISO_DIR` (was `ISO_ROOT`), and all three updaters copy their folder to `dir` first and check that it exists through `dir` *(Claude, directed by user)*
 - **all scripts:** Each updater's required commands are listed in one `case` in `require_cmds` (`common.sh`); `main` passes its type (`app`, `apw`, `iso`) instead of the command names *(Claude, directed by user)*
 

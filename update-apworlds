@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/progress.sh
 [[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
+# shellcheck source=lib/update-tools
+source "$SCRIPT_DIR/lib/update-tools"
 
 # The staged download, global so the EXIT trap can remove it after a Ctrl+C.
 tmp_download=""
@@ -63,6 +65,8 @@ unbundle_apworld() {
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
+    local rc target target_name
+    local -a top_dirs
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%.apworld.cfg}"
@@ -176,15 +180,6 @@ process_item() {
     status_final "✓ updated to $latest_tag ($target_name)"
 }
 
-# Walks every cfg; a function of its own so -d can time the whole run.
-run_items() {
-    for i in "${!cfg_files[@]}"; do
-        commit_final
-        timed "" process_item "$i" || { (( $? == 2 )) && break; }
-    done
-    return 0
-}
-
 # Fills in the shared help text in common.sh.
 USAGE_ITEM="world"
 USAGE_ABOUT="Check and update the Archipelago worlds in
@@ -192,45 +187,18 @@ USAGE_ABOUT="Check and update the Archipelago worlds in
 its .cfg folder. A cfg whose world isn't there yet is installed."
 USAGE_ROOT="the custom_worlds folder above"
 
-main() {
-    local force=false check_only=false
-    parse_flags "$@"
-    local today
-    today=$(date +%F)
+# Fills in main in lib/update-tools.
+ITEM_TYPE="apw"
+ITEM_EXT="apworld"
+DEFAULT_DIR="/mnt/games_rando/Archipelago/custom_worlds"
+NOT_FOUND_HINT="Is the games drive mounted? Point to the folder with -r DIR."
 
-    WORLDS_DIR="${ROOT_ARG:-/mnt/games_rando/Archipelago/custom_worlds}"
-    WORLDS_DIR="${WORLDS_DIR%/}"
-    dir="$WORLDS_DIR"
-    if [[ ! -d "$dir" ]]; then
-        echo "ERROR: $dir not found. Is the games drive mounted? Point to the folder with -r DIR." >&2
-        exit 1
-    fi
-    CFG_DIR="$dir/.cfg"
+prepare_dir() {
     OLD_DIR="$dir/.old"
     TMP_DIR="$dir/.tmp"
-
-    require_cmds apw
-    mkdir -p "$CFG_DIR" "$OLD_DIR" "$TMP_DIR"
+    mkdir -p "$OLD_DIR" "$TMP_DIR"
     # left over from an interrupted earlier run
     rm -f "$TMP_DIR"/download.* "$TMP_DIR"/extracted.*
-
-    start_run
-
-    shopt -s nullglob
-    local cfg_files=("$CFG_DIR"/*.apworld.cfg)
-    if (( ${#cfg_files[@]} == 0 )); then
-        say "⚠ no *.apworld.cfg files in $CFG_DIR, nothing to do"
-        return 0
-    fi
-    init_progress "${#cfg_files[@]}"
-
-    local i rc cfg_file name installed_path
-    local target target_name
-    local -a top_dirs
-
-    timed "total" run_items
-
-    finish_progress
 }
 
 main "$@"

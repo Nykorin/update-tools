@@ -7,8 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/progress.sh
 [[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
+# shellcheck source=lib/update-tools
+source "$SCRIPT_DIR/lib/update-tools"
 
-# The staged download, global so the EXIT trap can remove it after a Ctrl+C.
+# The staged download, global so the EXIT trap can remove it after a Ctrl+C:
+# a half-downloaded ISO is useless, and a hidden .part file is easy to forget.
 tmp_download=""
 
 cleanup() {
@@ -171,6 +174,8 @@ resolve_iso() {
 # One cfg: check it, and update it if needed.
 process_item() {
     local i="$1"
+    local sum_text algo want got size avail sum_name
+    local iso_url iso_name sum_url nothing_newer
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%.iso.cfg}"
@@ -302,15 +307,6 @@ process_item() {
     status_final "✓ updated to $iso_name"
 }
 
-# Walks every cfg; a function of its own so -d can time the whole run.
-run_items() {
-    for i in "${!cfg_files[@]}"; do
-        commit_final
-        timed "" process_item "$i"
-    done
-    return 0
-}
-
 # Fills in the shared help text in common.sh.
 USAGE_ITEM="ISO"
 USAGE_ABOUT="Check and update the ISOs on the Ventoy drive (/mnt/ventoy/_ISO), one
@@ -319,43 +315,17 @@ folder below it (like Linux/Fedora/Fedora). Every download is checksum-verified
 before it replaces anything."
 USAGE_ROOT="/mnt/ventoy/_ISO (the drive's _ISO folder)"
 
-main() {
-    local force=false check_only=false
-    parse_flags "$@"
-    local today
-    today=$(date +%F)
+# Fills in main in lib/update-tools.
+ITEM_TYPE="iso"
+ITEM_EXT="iso"
+DEFAULT_DIR="/mnt/ventoy/_ISO"
+NOT_FOUND_HINT="Is the Ventoy drive mounted? Point to it with -r DIR."
 
-    ISO_DIR="${ROOT_ARG:-/mnt/ventoy/_ISO}"
-    ISO_DIR="${ISO_DIR%/}"
-    dir="$ISO_DIR"
-    if [[ ! -d "$dir" ]]; then
-        echo "ERROR: $dir not found. Is the Ventoy drive mounted? Point to it with -r DIR." >&2
-        exit 1
-    fi
-    CFG_DIR="$dir/.cfg"
-
-    require_cmds iso
-    mkdir -p "$CFG_DIR"
+prepare_dir() {
+    # process_item points dir at each ISO's folder, so keep the root
+    ISO_DIR="$dir"
     # left over from a run that was killed outright (Ctrl+C cleans up after itself)
     find "$dir" -mindepth 1 -name '.*.iso.part' -type f -delete
-
-    # a half-downloaded ISO is useless, and a hidden .part file is easy to forget
-    start_run
-
-    shopt -s nullglob
-    local cfg_files=("$CFG_DIR"/*.iso.cfg)
-    if (( ${#cfg_files[@]} == 0 )); then
-        say "⚠ no *.iso.cfg files in $CFG_DIR, nothing to do"
-        return 0
-    fi
-    init_progress "${#cfg_files[@]}"
-
-    local i cfg_file name installed_path sum_text algo want got size avail sum_name
-    local iso_url iso_name sum_url nothing_newer
-
-    timed "total" run_items
-
-    finish_progress
 }
 
 main "$@"

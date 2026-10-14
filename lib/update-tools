@@ -1,0 +1,52 @@
+# shellcheck shell=bash
+# The main every updater shares, sourced after common.sh. Each updater sets
+# ITEM_TYPE (require_cmds), ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg),
+# DEFAULT_DIR and NOT_FOUND_HINT, and defines prepare_dir (its other folders
+# and an interrupted run's leftovers), cleanup (for the EXIT trap) and
+# process_item, then calls main "$@".
+
+# Walks every cfg; a function of its own so -d can time the whole run.
+run_items() {
+    for i in "${!cfg_files[@]}"; do
+        commit_final
+        timed "" process_item "$i" || { (( $? == 2 )) && break; }
+    done
+    return 0
+}
+
+# shellcheck disable=SC2034  # its locals are read by each updater's process_item
+main() {
+    local force=false check_only=false
+    parse_flags "$@"
+    local today
+    today=$(date +%F)
+
+    dir="${ROOT_ARG:-$DEFAULT_DIR}"
+    dir="${dir%/}"
+    if [[ ! -d "$dir" ]]; then
+        echo "ERROR: $dir not found. $NOT_FOUND_HINT" >&2
+        exit 1
+    fi
+    CFG_DIR="$dir/.cfg"
+
+    require_cmds "$ITEM_TYPE"
+    mkdir -p "$CFG_DIR"
+    prepare_dir
+
+    start_run
+
+    shopt -s nullglob
+    local cfg_files=("$CFG_DIR"/*."$ITEM_EXT".cfg)
+    if (( ${#cfg_files[@]} == 0 )); then
+        say "⚠ no *.$ITEM_EXT.cfg files in $CFG_DIR, nothing to do"
+        return 0
+    fi
+    init_progress "${#cfg_files[@]}"
+
+    # the per-item variables all three share; process_item declares the rest
+    local i cfg_file name installed_path
+
+    timed "total" run_items
+
+    finish_progress
+}

@@ -7,6 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/progress.sh
 [[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
+# shellcheck source=lib/update-tools
+source "$SCRIPT_DIR/lib/update-tools"
 
 # Staged files, global so the EXIT trap can remove them after a Ctrl+C.
 tmp_download="" tmp_extract_dir="" DESKTOP_TMP=""
@@ -130,6 +132,7 @@ EOF
 # One cfg: check it, and update it if needed. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
+    local new_appimage new_name
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%.appimage.cfg}"
@@ -268,15 +271,6 @@ process_item() {
     status_final "✓ updated to $latest_tag"
 }
 
-# Walks every cfg; a function of its own so -d can time the whole run.
-run_items() {
-    for i in "${!cfg_files[@]}"; do
-        commit_final
-        timed "" process_item "$i" || { (( $? == 2 )) && break; }
-    done
-    return 0
-}
-
 # Fills in the shared help text in common.sh.
 USAGE_ITEM="app"
 USAGE_ABOUT="Check and update the AppImages in ~/AppImages, one NAME.appimage.cfg per app
@@ -285,47 +279,20 @@ in ~/AppImages/.cfg. A cfg whose AppImage isn't there yet is installed."
 USAGE_ROOT="~/AppImages (desktop entries still go
                     to ~/.local/share/applications)"
 
-main() {
-    local force=false check_only=false
-    parse_flags "$@"
-    local today
-    today=$(date +%F)
+# Fills in main in lib/update-tools.
+ITEM_TYPE="app"
+ITEM_EXT="appimage"
+DEFAULT_DIR="$HOME/AppImages"
+NOT_FOUND_HINT="Point to the AppImages folder with -r DIR."
 
-    APPIMAGE_DIR="${ROOT_ARG:-$HOME/AppImages}"
-    APPIMAGE_DIR="${APPIMAGE_DIR%/}"
-    dir="$APPIMAGE_DIR"
-    if [[ ! -d "$dir" ]]; then
-        echo "ERROR: $dir not found. Point to the AppImages folder with -r DIR." >&2
-        exit 1
-    fi
-    CFG_DIR="$dir/.cfg"
+prepare_dir() {
     ICONS_DIR="$dir/.icons"
     OLD_DIR="$dir/.old"
-
     TMP_DIR="$dir/.tmp"
-
-    require_cmds app
-    mkdir -p "$CFG_DIR" "$ICONS_DIR" "$OLD_DIR"
+    mkdir -p "$ICONS_DIR" "$OLD_DIR"
     # anything left here is from an interrupted earlier run
     rm -rf "$TMP_DIR"
     mkdir -p "$TMP_DIR"
-
-    start_run
-
-    shopt -s nullglob
-    local cfg_files=("$CFG_DIR"/*.appimage.cfg)
-    if (( ${#cfg_files[@]} == 0 )); then
-        say "⚠ no *.appimage.cfg files in $CFG_DIR, nothing to do"
-        return 0
-    fi
-    init_progress "${#cfg_files[@]}"
-
-    local i cfg_file name installed_path
-    local new_appimage new_name
-
-    timed "total" run_items
-
-    finish_progress
 }
 
 main "$@"
