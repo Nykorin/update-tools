@@ -304,27 +304,31 @@ run_items() {
     return 0
 }
 
+usage() {
+    cat <<EOF
+Usage: ${0##*/} [OPTIONS]
+Check and update the ISOs on the Ventoy drive (/mnt/ventoy/_ISO), one
+NAME.iso.cfg next to each ISO. Every download is checksum-verified before it
+replaces anything.
+
+Options:
+  -c, --check       only look for updates: download and change nothing
+  -f, --force       check every ISO, even ones already checked today
+  -r, --root DIR    use DIR instead of /mnt/ventoy/_ISO: the drive's mount
+                    point or its _ISO folder (also ISO_ROOT=DIR)
+  -d, --debug       explain each decision and time each ISO (or DEBUG=1)
+  -h, --help        show this help
+EOF
+}
+
 main() {
     local force=false check_only=false
-    local usage="Usage: ${0##*/} [-f|--force] [-c|--check] [-r|--root DIR] [-d|--debug]"
-    while (( $# )); do
-        case "$1" in
-            -f|--force) force=true ;;
-            -c|--check) check_only=true ;;
-            -d|--debug) DEBUG=1 ;;
-            -r|--root)
-                [[ -n "${2:-}" ]] || { echo "$usage" >&2; exit 2; }
-                ISO_ROOT="$2"; shift ;;
-            --root=*)   ISO_ROOT="${1#--root=}" ;;
-            *)          echo "$usage" >&2; exit 2 ;;
-        esac
-        shift
-    done
+    parse_flags "$@"
     local today
     today=$(date +%F)
 
     # -r beats $ISO_ROOT beats the default; the drive's mount point works too
-    ISO_ROOT="${ISO_ROOT:-/mnt/ventoy/_ISO}"
+    ISO_ROOT="${ROOT_ARG:-${ISO_ROOT:-/mnt/ventoy/_ISO}}"
     ISO_ROOT="${ISO_ROOT%/}"
     [[ -d "$ISO_ROOT/_ISO" ]] && ISO_ROOT+="/_ISO"
     if [[ ! -d "$ISO_ROOT" ]]; then

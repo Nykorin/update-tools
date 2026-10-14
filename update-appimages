@@ -278,20 +278,35 @@ run_items() {
     return 0
 }
 
+usage() {
+    cat <<EOF
+Usage: ${0##*/} [OPTIONS]
+Check and update the AppImages in ~/AppImages, one NAME.appimage.cfg per app
+in ~/AppImages/.cfg. A cfg whose AppImage isn't there yet is installed.
+
+Options:
+  -c, --check       only look for updates: download and change nothing
+  -f, --force       check every app, even ones already checked today
+  -r, --root DIR    use DIR instead of ~/AppImages (desktop entries still go
+                    to ~/.local/share/applications)
+  -d, --debug       explain each decision and time each app (or DEBUG=1)
+  -h, --help        show this help
+EOF
+}
+
 main() {
-    local force=false check_only=false arg
-    for arg in "$@"; do
-        case "$arg" in
-            -f|--force) force=true ;;
-            -c|--check) check_only=true ;;
-            -d|--debug) DEBUG=1 ;;
-            *)          echo "Usage: ${0##*/} [-f|--force] [-c|--check] [-d|--debug]" >&2; exit 2 ;;
-        esac
-    done
+    local force=false check_only=false
+    parse_flags "$@"
     local today
     today=$(date +%F)
 
-    dir="$HOME/AppImages"
+    APPIMAGE_DIR="${ROOT_ARG:-$HOME/AppImages}"
+    APPIMAGE_DIR="${APPIMAGE_DIR%/}"
+    if [[ ! -d "$APPIMAGE_DIR" ]]; then
+        echo "ERROR: $APPIMAGE_DIR not found. Point to the AppImages folder with -r DIR." >&2
+        exit 1
+    fi
+    dir="$APPIMAGE_DIR"
     CFG_DIR="$dir/.cfg"
     ICONS_DIR="$dir/.icons"
     OLD_DIR="$dir/.old"

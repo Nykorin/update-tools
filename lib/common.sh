@@ -59,6 +59,33 @@ timed() {
 }
 
 # ---------------------------------------------------------------------------
+# Flags, the same in every updater
+# ---------------------------------------------------------------------------
+ROOT_ARG=""
+
+# Sets the caller's force and check_only, DEBUG, and ROOT_ARG (-r); the script
+# provides usage(), which -h prints and a bad option prints to stderr.
+# shellcheck disable=SC2034  # force and check_only are main's locals
+parse_flags() {
+    while (( $# )); do
+        case "$1" in
+            -c|--check) check_only=true ;;
+            -f|--force) force=true ;;
+            -r|--root)
+                if [[ -z "${2:-}" ]]; then
+                    echo "${0##*/}: $1 needs a folder" >&2; usage >&2; exit 2
+                fi
+                ROOT_ARG="$2"; shift ;;
+            --root=*)   ROOT_ARG="${1#--root=}" ;;
+            -d|--debug) DEBUG=1 ;;
+            -h|--help)  usage; exit 0 ;;
+            *)          echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+        esac
+        shift
+    done
+}
+
+# ---------------------------------------------------------------------------
 # Utilities
 # ---------------------------------------------------------------------------
 # A server that accepts the connection and then never answers would hang a run.

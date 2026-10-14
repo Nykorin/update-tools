@@ -186,21 +186,35 @@ run_items() {
     return 0
 }
 
+usage() {
+    cat <<EOF
+Usage: ${0##*/} [OPTIONS]
+Check and update the Archipelago worlds in
+/mnt/games_rando/Archipelago/custom_worlds, one NAME.apworld.cfg per world in
+its .cfg folder. A cfg whose world isn't there yet is installed.
+
+Options:
+  -c, --check       only look for updates: download and change nothing
+  -f, --force       check every world, even ones already checked today
+  -r, --root DIR    use DIR instead of the custom_worlds folder above
+  -d, --debug       explain each decision and time each world (or DEBUG=1)
+  -h, --help        show this help
+EOF
+}
+
 main() {
-    local force=false check_only=false arg
-    for arg in "$@"; do
-        case "$arg" in
-            -f|--force) force=true ;;
-            -c|--check) check_only=true ;;
-            -d|--debug) DEBUG=1 ;;
-            *)          echo "Usage: ${0##*/} [-f|--force] [-c|--check] [-d|--debug]" >&2; exit 2 ;;
-        esac
-    done
+    local force=false check_only=false
+    parse_flags "$@"
     local today
     today=$(date +%F)
 
-    # WORLDS_DIR from the environment points the script at another folder (tests)
-    dir="${WORLDS_DIR:-/mnt/games_rando/Archipelago/custom_worlds}"
+    WORLDS_DIR="${ROOT_ARG:-/mnt/games_rando/Archipelago/custom_worlds}"
+    WORLDS_DIR="${WORLDS_DIR%/}"
+    if [[ ! -d "$WORLDS_DIR" ]]; then
+        echo "ERROR: $WORLDS_DIR not found. Is the games drive mounted? Point to the folder with -r DIR." >&2
+        exit 1
+    fi
+    dir="$WORLDS_DIR"
     CFG_DIR="$dir/.cfg"
     OLD_DIR="$dir/.old"
     TMP_DIR="$dir/.tmp"

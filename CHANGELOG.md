@@ -9,6 +9,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-13]
 
 ### Added
+- **all scripts:** `-h`/`--help` and a fuller usage text, and `-r`/`--root DIR` for update-appimages (`APPIMAGE_DIR`) and update-apworlds (`WORLDS_DIR`), like update-isos; all flags are parsed once by `parse_flags` in `common.sh`, and a missing item folder is now an error instead of being created *(Claude, directed by user)*
 - **update-isos.sh:** New updater for the ISOs on the Ventoy drive (`/mnt/ventoy/_ISO`), sharing `common.sh` and `progress.sh`: one cfg next to each ISO, required checksum verification before anything is replaced, the old ISO deleted only once the new one verifies, staged `.part` downloads that Ventoy can't list, a free-space check, and `-n`/`--check` *(Claude, directed by user)*
 - **update-isos.sh:** `dirlist` manager (newest file from the server's folder listings, including SourceForge), `static` (name taken from where the URL lands) and `dateprobe` (for Nobara's unlisted bucket) *(Claude, directed by user)*
 - **common.sh:** `load_cfg` clears the ISO cfg keys between items *(Claude, directed by user)*
@@ -33,6 +34,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** Each per-item loop body is now a `process_item` function (called by `run_items`) so it can be timed; output without `-d` is unchanged *(Claude, directed by user)*
 
 ### Removed
+- **update-apworlds.sh:** Reading `WORLDS_DIR` from the environment; use `-r DIR` *(Claude, directed by user)*
 - **update-appimages.sh:** The fallback that found an AppImage named after its cfg (`NAME.appimage`) when the cfg had no `installed_file`; every cfg now has one, and a cfg without it is a first install *(Claude, directed by user)*
 
 ### Fixed
