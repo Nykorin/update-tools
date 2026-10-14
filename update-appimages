@@ -271,19 +271,8 @@ process_item() {
     status_final "✓ updated to $latest_tag"
 }
 
-# Fills in the shared help text in common.sh.
-USAGE_ITEM="app"
-USAGE_ABOUT="Check and update the AppImages in ~/AppImages, one NAME.appimage.cfg per app
-in ~/AppImages/.cfg. A cfg whose AppImage isn't there yet is installed."
-# shellcheck disable=SC2088  # a literal ~ for the help text, not a path
-USAGE_ROOT="~/AppImages (desktop entries still go
-                    to ~/.local/share/applications)"
-
-# Fills in main in lib/update-tools.
+# Picks this updater's settings in lib/update-tools.
 ITEM_TYPE="app"
-ITEM_EXT="appimage"
-DEFAULT_DIR="$HOME/AppImages"
-NOT_FOUND_HINT="Point to the AppImages folder with -r DIR."
 
 prepare_dir() {
     ICONS_DIR="$dir/.icons"

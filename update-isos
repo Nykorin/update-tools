@@ -223,19 +223,8 @@ process_item() {
     status_final "✓ updated to ${latest_tag:-$iso_name}"
 }
 
-# Fills in the shared help text in common.sh.
-USAGE_ITEM="ISO"
-USAGE_ABOUT="Check and update the ISOs on the Ventoy drive (/mnt/ventoy/_ISO), one
-NAME.iso.cfg per ISO in its .cfg folder, whose folder= key names the ISO's
-folder below it (like Linux/Fedora/Fedora). Every download is checksum-verified
-before it replaces anything."
-USAGE_ROOT="/mnt/ventoy/_ISO (the drive's _ISO folder)"
-
-# Fills in main in lib/update-tools.
+# Picks this updater's settings in lib/update-tools.
 ITEM_TYPE="iso"
-ITEM_EXT="iso"
-DEFAULT_DIR="/mnt/ventoy/_ISO"
-NOT_FOUND_HINT="Is the Ventoy drive mounted? Point to it with -r DIR."
 
 prepare_dir() {
     # process_item points dir at each ISO's folder, so keep the root

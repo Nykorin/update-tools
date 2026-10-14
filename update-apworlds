@@ -180,18 +180,8 @@ process_item() {
     status_final "✓ updated to $latest_tag ($target_name)"
 }
 
-# Fills in the shared help text in common.sh.
-USAGE_ITEM="world"
-USAGE_ABOUT="Check and update the Archipelago worlds in
-/mnt/games_rando/Archipelago/custom_worlds, one NAME.apworld.cfg per world in
-its .cfg folder. A cfg whose world isn't there yet is installed."
-USAGE_ROOT="the custom_worlds folder above"
-
-# Fills in main in lib/update-tools.
+# Picks this updater's settings in lib/update-tools.
 ITEM_TYPE="apw"
-ITEM_EXT="apworld"
-DEFAULT_DIR="/mnt/games_rando/Archipelago/custom_worlds"
-NOT_FOUND_HINT="Is the games drive mounted? Point to the folder with -r DIR."
 
 prepare_dir() {
     OLD_DIR="$dir/.old"
