@@ -278,21 +278,13 @@ run_items() {
     return 0
 }
 
-usage() {
-    cat <<EOF
-Usage: ${0##*/} [OPTIONS]
-Check and update the AppImages in ~/AppImages, one NAME.appimage.cfg per app
-in ~/AppImages/.cfg. A cfg whose AppImage isn't there yet is installed.
-
-Options:
-  -c, --check       only look for updates: download and change nothing
-  -f, --force       check every app, even ones already checked today
-  -r, --root DIR    use DIR instead of ~/AppImages (desktop entries still go
-                    to ~/.local/share/applications)
-  -d, --debug       explain each decision and time each app (or DEBUG=1)
-  -h, --help        show this help
-EOF
-}
+# Fills in the shared help text in common.sh.
+USAGE_ITEM="app"
+USAGE_ABOUT="Check and update the AppImages in ~/AppImages, one NAME.appimage.cfg per app
+in ~/AppImages/.cfg. A cfg whose AppImage isn't there yet is installed."
+# shellcheck disable=SC2088  # a literal ~ for the help text, not a path
+USAGE_ROOT="~/AppImages (desktop entries still go
+                    to ~/.local/share/applications)"
 
 main() {
     local force=false check_only=false

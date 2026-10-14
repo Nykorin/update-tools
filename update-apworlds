@@ -186,21 +186,12 @@ run_items() {
     return 0
 }
 
-usage() {
-    cat <<EOF
-Usage: ${0##*/} [OPTIONS]
-Check and update the Archipelago worlds in
+# Fills in the shared help text in common.sh.
+USAGE_ITEM="world"
+USAGE_ABOUT="Check and update the Archipelago worlds in
 /mnt/games_rando/Archipelago/custom_worlds, one NAME.apworld.cfg per world in
-its .cfg folder. A cfg whose world isn't there yet is installed.
-
-Options:
-  -c, --check       only look for updates: download and change nothing
-  -f, --force       check every world, even ones already checked today
-  -r, --root DIR    use DIR instead of the custom_worlds folder above
-  -d, --debug       explain each decision and time each world (or DEBUG=1)
-  -h, --help        show this help
-EOF
-}
+its .cfg folder. A cfg whose world isn't there yet is installed."
+USAGE_ROOT="the custom_worlds folder above"
 
 main() {
     local force=false check_only=false

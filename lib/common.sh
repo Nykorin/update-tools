@@ -63,8 +63,25 @@ timed() {
 # ---------------------------------------------------------------------------
 ROOT_ARG=""
 
-# Sets the caller's force and check_only, DEBUG, and ROOT_ARG (-r); the script
-# provides usage(), which -h prints and a bad option prints to stderr.
+# The help text, shared by every updater: each script sets USAGE_ABOUT (what it
+# updates and where), USAGE_ITEM (app, world, ISO) and USAGE_ROOT (the rest of
+# the -r line, continuation lines indented to the description column).
+usage() {
+    cat <<EOF
+Usage: ${0##*/} [OPTIONS]
+$USAGE_ABOUT
+
+Options:
+  -c, --check       only look for updates: download and change nothing
+  -f, --force       check every $USAGE_ITEM, even ones already checked today
+  -r, --root DIR    use DIR instead of $USAGE_ROOT
+  -d, --debug       explain each decision and time each $USAGE_ITEM (or DEBUG=1)
+  -h, --help        show this help
+EOF
+}
+
+# Sets the caller's force and check_only, DEBUG, and ROOT_ARG (-r); -h prints
+# usage, and a bad option prints it to stderr.
 # shellcheck disable=SC2034  # force and check_only are main's locals
 parse_flags() {
     while (( $# )); do
