@@ -93,7 +93,7 @@ resolve_iso() {
 process_item() {
     local i="$1"
     local sum_text algo want got size avail sum_name
-    local iso_url iso_name sum_url nothing_newer new_file target
+    local iso_url iso_name sum_url nothing_newer new_file new_name target
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
     name="${name%".$ITEM_EXT.cfg"}"
@@ -212,7 +212,9 @@ process_item() {
         return 0
     fi
 
-    target="$dir/$iso_name"
+    # the checksum was looked up under the upstream name; this is only where it lands
+    pick_name "$iso_name"
+    target="$dir/$new_name"
 
     new_file="$tmp_download"
     # the installed version (and a stray file already using the new name) waits in
@@ -240,7 +242,7 @@ process_item() {
     printf '%s\n' "$sum_text" > "$dir/$sum_name"
     [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
 
-    installed_file="$iso_name" iso_hash="$algo:$want" checksum_file="$sum_name"
+    installed_file="$new_name" iso_hash="$algo:$want" checksum_file="$sum_name"
     save_update_metadata "$cfg_file"
     status_final "✓ updated to $(shown_version "$installed_file")"
 }

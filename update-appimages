@@ -216,17 +216,7 @@ process_item() {
             ;;
     esac
 
-    # keep the upstream name and casing (versions included), like the ISOs; a
-    # download URL without a usable AppImage name keeps the current one, or on a
-    # first install takes the cfg's name
-    if [[ "${new_name,,}" != *.appimage ]]; then
-        if [[ -n "$installed_path" ]]; then
-            new_name="${installed_path##*/}"
-        else
-            new_name="$name.AppImage"
-        fi
-    fi
-
+    pick_name "$new_name"
     target="$dir/$new_name"
 
     # the installed version (and a stray file already using the new name) waits in

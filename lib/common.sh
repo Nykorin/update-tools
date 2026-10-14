@@ -873,6 +873,27 @@ recover_previous() {
     done < <(find "$TMP_DIR" -type f -name '*.previous' -print0)
 }
 
+# Sets new_name, the name to install under: CANDIDATE (the upstream name, versions
+# and casing included) if it ends in .ITEM_EXT (any case), so the desktop,
+# Archipelago or Ventoy recognises it; otherwise the installed file's name, or on a
+# first install the cfg's name with the extension. Sets a variable rather than
+# printing, so its debug line isn't captured by $(...).
+pick_name() {
+    local ext
+    case "$ITEM_TYPE" in
+        app) ext="AppImage" ;;
+        *)   ext="$ITEM_EXT" ;;
+    esac
+    new_name="$1"
+    [[ "${new_name,,}" == *".${ITEM_EXT,,}" ]] && return 0
+    if [[ -n "$installed_path" ]]; then
+        new_name="${installed_path##*/}"
+    else
+        new_name="$name.$ext"
+    fi
+    debug "upstream name '$1' doesn't end in .$ext; installing as $new_name"
+}
+
 # Returns 0 if the item is already up to date.
 # $1 = the installed file, hashed once for github cfgs saved before asset_digest.
 is_up_to_date() {

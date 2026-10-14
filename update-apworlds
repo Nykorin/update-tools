@@ -150,18 +150,8 @@ process_item() {
         return 0
     fi
 
-    # keep the upstream name, like the AppImages and ISOs (Archipelago reports a world
-    # whose name doesn't match its module); a download URL without a usable .apworld
-    # name keeps the current one, or on a first install takes the cfg's name
-    new_name="$asset_name"
-    if [[ "${new_name,,}" != *.apworld ]]; then
-        if [[ -n "$installed_path" ]]; then
-            new_name="${installed_path##*/}"
-        else
-            new_name="$name.apworld"
-        fi
-    fi
-
+    # Archipelago reports a world whose name doesn't match its module
+    pick_name "$asset_name"
     target="$dir/$new_name"
 
     new_file="$tmp_download"
