@@ -209,7 +209,7 @@ main() {
     OLD_DIR="$dir/.old"
     TMP_DIR="$dir/.tmp"
 
-    require_cmds curl jq unzip
+    require_cmds apw
     mkdir -p "$CFG_DIR" "$OLD_DIR" "$TMP_DIR"
     # left over from an interrupted earlier run
     rm -f "$TMP_DIR"/download.* "$TMP_DIR"/extracted.*

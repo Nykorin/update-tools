@@ -335,7 +335,7 @@ main() {
     fi
     CFG_DIR="$ISO_ROOT/.cfg"
 
-    require_cmds curl sha256sum sha512sum
+    require_cmds iso
     mkdir -p "$CFG_DIR"
     # left over from a run that was killed outright (Ctrl+C cleans up after itself)
     find "$ISO_ROOT" -mindepth 1 -name '.*.iso.part' -type f -delete

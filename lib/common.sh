@@ -112,9 +112,22 @@ CURL_META=(--connect-timeout 20 --max-time 120)
 # shellcheck disable=SC2034  # used by the updaters' download lines
 CURL_DL=(--connect-timeout 20 --speed-limit 1024 --speed-time 60)
 
+# Each updater's dependencies, by type: app, apw or iso. ;;& goes on to test
+# the patterns after it, so a type collects every branch it matches.
 require_cmds() {
     local dep
-    for dep in "$@"; do
+    local -a deps=()
+    case "$1" in
+        app|apw|iso) deps=(curl) ;;&
+        app|apw) deps+=(jq) ;;&
+        apw) deps+=(unzip) ;;
+        iso) deps+=(sha256sum sha512sum) ;;
+    esac
+    if (( ${#deps[@]} == 0 )); then
+        echo "ERROR: require_cmds: unknown updater type '${1:-}'" >&2
+        exit 1
+    fi
+    for dep in "${deps[@]}"; do
         command -v "$dep" &>/dev/null || {
             echo "ERROR: required command not found: $dep" >&2
             exit 1
