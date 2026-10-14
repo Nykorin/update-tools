@@ -406,13 +406,26 @@ rate_summary() {
     STATUS="${warn}GitHub API: $GITHUB_REMAINING/$GITHUB_LIMIT requests left${when} (used $GITHUB_CALLS this run)"
 }
 
-# Setup every updater shares: the EXIT trap, which removes the GitHub headers
-# file, curl_run's log and timed's files, puts back an old version still set
-# aside, then runs the script's own cleanup(); and the GitHub token and headers
-# file (update-isos never contacts GitHub, so they simply go unused there).
+# Staged files, global so the EXIT trap can remove them after a Ctrl+C (a
+# half-downloaded ISO is useless, and a hidden .part file is easy to forget). Only
+# update-appimages extracts, into tmp_extract_dir and DESKTOP_TMP.
+tmp_download="" tmp_extract_dir="" DESKTOP_TMP=""
+
+# The EXIT trap: removes the GitHub headers file, curl_run's log, timed's files and
+# any staged download or extraction, and puts back an old version still set aside.
+# rm -f ignores an empty name, so unset ones need no check.
+cleanup() {
+    rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}" "$tmp_download"
+    rm -rf "$tmp_extract_dir" "$DESKTOP_TMP"
+    restore_previous
+    return 0
+}
+
+# Setup every updater shares: the EXIT trap (cleanup), and the GitHub token and
+# headers file (update-isos never contacts GitHub, so they simply go unused there).
 start_run() {
     GITHUB_HEADERS=$(mktemp)
-    trap 'rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}"; restore_previous; cleanup' EXIT
+    trap cleanup EXIT
     load_github_token
 }
 

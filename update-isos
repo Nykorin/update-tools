@@ -10,15 +10,6 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/update-tools
 source "$SCRIPT_DIR/lib/update-tools"
 
-# The staged download, global so the EXIT trap can remove it after a Ctrl+C:
-# a half-downloaded ISO is useless, and a hidden .part file is easy to forget.
-tmp_download=""
-
-cleanup() {
-    [[ -n "$tmp_download" ]] && rm -f "$tmp_download"
-    return 0
-}
-
 # "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines ("hash  name",
 # "hash *name", "hash  ./name") and BSD lines ("SHA256 (name) = hash"), matching
 # on the file name alone (Ultramarine lists build paths); sha512 wins over sha256,

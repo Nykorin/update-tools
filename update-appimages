@@ -10,16 +10,6 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/update-tools
 source "$SCRIPT_DIR/lib/update-tools"
 
-# Staged files, global so the EXIT trap can remove them after a Ctrl+C.
-tmp_download="" tmp_extract_dir="" DESKTOP_TMP=""
-
-cleanup() {
-    [[ -n "$tmp_download" ]] && rm -f "$tmp_download"
-    [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
-    [[ -n "$DESKTOP_TMP" ]] && rm -rf "$DESKTOP_TMP"
-    return 0
-}
-
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
 ensure_desktop_entry() {
@@ -231,7 +221,7 @@ process_item() {
     if ! set_aside "$installed_path" "$target"; then
         say "  ✗ $name: could not move the old version aside, nothing changed"
         rm -f "$tmp_download"
-        [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+        rm -rf "$tmp_extract_dir"
         return 0
     fi
 
@@ -240,12 +230,12 @@ process_item() {
         restore_previous
         say "  ✗ $name: could not install ${target##*/}, kept the old one"
         rm -f "$tmp_download"
-        [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+        rm -rf "$tmp_extract_dir"
         return 0
     fi
     [[ -n "$ITEM_MODE" ]] && chmod "$ITEM_MODE" "$target"
     rm -f "$tmp_download"
-    [[ -n "$tmp_extract_dir" ]] && rm -rf "$tmp_extract_dir"
+    rm -rf "$tmp_extract_dir"
     debug "installed as ${target##*/}"
     drop_previous
 

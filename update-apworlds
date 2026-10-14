@@ -10,14 +10,6 @@ source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/update-tools
 source "$SCRIPT_DIR/lib/update-tools"
 
-# The staged download, global so the EXIT trap can remove it after a Ctrl+C.
-tmp_download=""
-
-cleanup() {
-    [[ -n "$tmp_download" ]] && rm -f "$tmp_download"
-    return 0
-}
-
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"
     local entry base member extracted list

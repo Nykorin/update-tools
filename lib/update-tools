@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 # The main every updater shares, sourced after common.sh. Each updater sets
 # ITEM_TYPE (app, apw or iso: picks its settings below and its require_cmds),
-# and defines prepare_dir (its other folders and an interrupted run's
-# leftovers), cleanup (for the EXIT trap) and process_item, then calls main "$@".
+# and defines prepare_dir (its other folders and an interrupted run's leftovers)
+# and process_item, then calls main "$@". The EXIT trap's cleanup is in common.sh.
 
 # Each updater's settings, by ITEM_TYPE: ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg,
 # and the help text calls an item that), ITEM_MODE (for installed files; empty
