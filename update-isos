@@ -207,6 +207,7 @@ process_item() {
         rm -f "$tmp_download"
         return 0
     fi
+    iso_hash="$algo:$want"
 
     # the checksum was looked up under the upstream name; this is only where it lands
     pick_name "$asset_name"
@@ -236,9 +237,11 @@ process_item() {
     sum_name="${checksum_save:-${sum_url##*/}}"
     sum_name="${sum_name//\{iso\}/$asset_name}"
     printf '%s\n' "$sum_text" > "$dir/$sum_name"
+    # the old checksum file goes once the new one is saved
     [[ -n "${checksum_file:-}" && "$checksum_file" != "$sum_name" ]] && rm -f "$dir/$checksum_file"
+    checksum_file="$sum_name"
 
-    installed_file="$new_name" iso_hash="$algo:$want" checksum_file="$sum_name"
+    installed_file="$new_name"
     save_update_metadata "$cfg_file"
     status_final "✓ updated to $(shown_version "$installed_file")"
 }
