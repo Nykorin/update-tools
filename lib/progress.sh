@@ -1,5 +1,6 @@
-# progress.sh – optional live status block
-# If this file is missing the main scripts fall back to plain output.
+# progress.sh: the live status block on a terminal, and plain lines otherwise
+# (PROGRESS_ON). Required, loaded first by load.sh: say and the status functions
+# live here.
 # shellcheck shell=bash
 
 PROGRESS_ON=0

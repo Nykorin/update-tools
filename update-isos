@@ -2,13 +2,10 @@
 # update-isos.sh
 set -uo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=lib/common.sh
-source "$SCRIPT_DIR/lib/common.sh"
-# shellcheck source=lib/progress.sh
-[[ -f "$SCRIPT_DIR/lib/progress.sh" ]] && source "$SCRIPT_DIR/lib/progress.sh"
-# shellcheck source=lib/update-tools
-source "$SCRIPT_DIR/lib/update-tools"
+# the script's real folder, through any symlink, so lib/ is found next to it
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=lib/load.sh
+source "$SCRIPT_DIR/lib/load.sh" || exit 1
 
 # "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines ("hash  name",
 # "hash *name", "hash  ./name") and BSD lines ("SHA256 (name) = hash"), matching
