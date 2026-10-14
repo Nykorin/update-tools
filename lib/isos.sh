@@ -1,11 +1,9 @@
-#!/usr/bin/env bash
-# update-isos.sh
-set -uo pipefail
-
-# the script's real folder, through any symlink, so lib/ is found next to it
-SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-# shellcheck source=lib/load.sh
-source "$SCRIPT_DIR/lib/load.sh" || exit 1
+# shellcheck shell=bash disable=SC2154,SC2034
+# isos.sh: the ISO updater (checksums, free space, the folder= key): its
+# prepare_dir and process_item, and their helpers. main.sh loads it for -m iso,
+# in that mode's own subshell, so the function names don't clash with the other
+# modules. It reads (SC2154) and sets (SC2034) variables that main.sh and the
+# shared libraries own.
 
 # "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines ("hash  name",
 # "hash *name", "hash  ./name") and BSD lines ("SHA256 (name) = hash"), matching
@@ -224,9 +222,6 @@ process_item() {
     status_final "✓ updated to $(shown_version "$installed_file")"
 }
 
-# Picks this updater's settings in lib/update-tools.
-ITEM_TYPE="iso"
-
 prepare_dir() {
     # process_item points dir at each ISO's folder, so keep the root
     ISO_DIR="$dir"
@@ -237,5 +232,3 @@ prepare_dir() {
     recover_previous
     find "$dir" -mindepth 1 -name '.*.iso.part' -type f -delete
 }
-
-main "$@"

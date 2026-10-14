@@ -1,11 +1,9 @@
-#!/usr/bin/env bash
-# update-apworlds.sh
-set -uo pipefail
-
-# the script's real folder, through any symlink, so lib/ is found next to it
-SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-# shellcheck source=lib/load.sh
-source "$SCRIPT_DIR/lib/load.sh" || exit 1
+# shellcheck shell=bash disable=SC2154,SC2034
+# apworlds.sh: the Archipelago world updater (bundles): its prepare_dir and
+# process_item, and their helpers. main.sh loads it for -m apw, in that mode's
+# own subshell, so the function names don't clash with the other modules. It
+# reads (SC2154) and sets (SC2034) variables that main.sh and the shared
+# libraries own.
 
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"
@@ -178,9 +176,6 @@ process_item() {
     status_final "✓ updated to $(shown_version "$installed_file")"
 }
 
-# Picks this updater's settings in lib/update-tools.
-ITEM_TYPE="apw"
-
 prepare_dir() {
     TMP_DIR="$dir/.tmp"
     mkdir -p "$TMP_DIR"
@@ -188,5 +183,3 @@ prepare_dir() {
     recover_previous
     rm -f "$TMP_DIR"/download.* "$TMP_DIR"/extracted.*
 }
-
-main "$@"

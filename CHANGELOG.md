@@ -9,6 +9,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-14]
 
 ### Added
+- **update-tools:** One command for everything: `-m`/`--mode` picks `app`/`appimages`, `apw`/`apworlds`, `iso`/`isos` or `all` (all three in turn; one that can't run, like an unplugged drive, is skipped with its error, the rest still run, and the run ends with `⚠ skipped: …` and exit 1; `-r` is refused with `all`). Without arguments it prints the help; other flags without `-m` are an error. The help lists every mode's folder *(Claude, directed by user)*
 - **CLAUDE.md:** The project is a git repository; diffs and undo go through git, and commits happen only on request *(Claude, directed by user)*
 - **CLAUDE.md:** Every change is committed as soon as it's made and checked, without asking (pushing, amending and rewriting history still need asking) *(Claude, directed by user)*
 - **lib/update-tools:** One `main` and `run_items` for all three updaters, sourced like `common.sh`; each updater now only sets `ITEM_TYPE`, `ITEM_EXT`, `DEFAULT_DIR` and `NOT_FOUND_HINT` and defines `prepare_dir` (its other folders and leftover cleanup). Output is unchanged *(Claude, directed by user)*
@@ -35,6 +36,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **all scripts:** Each updater's required commands are listed in one `case` in `require_cmds` (`common.sh`); `main` passes its type (`app`, `apw`, `iso`) instead of the command names *(Claude, directed by user)*
 
 ### Removed
+- **update-appimages.sh, update-apworlds.sh, update-isos.sh:** The three separate commands, replaced by `update-tools -m app|apw|iso`; their code is now `lib/appimages.sh`, `lib/apworlds.sh` and `lib/isos.sh`, each loaded only for its mode in its own subshell, and `lib/update-tools` is now `lib/main.sh`. `~/.local/bin/update-tools/` holds just an `update-tools` link (the three command links and the `lib` link are gone) *(Claude, directed by user)*
 - **common.sh, progress.sh:** The fallback stubs that let the updaters run without `progress.sh`; it's required now *(Claude, directed by user)*
 - **update-apworlds.sh, common.sh:** Renaming worlds after their module folder, the `install_name` override and the module-folder mismatch warning; worlds keep their upstream name like AppImages and ISOs (a name without `.apworld` keeps the installed name, or becomes `NAME.apworld` on a first install). All 124 current worlds already ship under their module name, and Archipelago reports a mismatch under "Failed World Loads" *(Claude, directed by user)*
 - **update-appimages.sh, update-apworlds.sh, common.sh:** Archiving to `.old/`: one previous version per app in `.old/NAME/` (`stash_old`, `keep_stash`, `unstash`), and every replaced world in `.old/` (`backup_file`). The existing `.old/` folders are left alone *(Claude, directed by user)*
