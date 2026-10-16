@@ -9,7 +9,7 @@
 # Every key a cfg may hold. load_cfg sets only these: any other name could
 # overwrite one of the scripts' own variables (dir, name, HOME, PATH, ...).
 CFG_KEYS=(
-    manager repo repo_filename allow_prereleases repo_url
+    manager repo repo_filename repo_regex allow_prereleases repo_url
     feed_url channel arch_key download_base url
     content_length last_modified current_version
     apworld_filename installed_file last_checked

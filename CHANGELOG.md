@@ -9,7 +9,11 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-16]
 
 ### Added
+- **lib/managers.sh, lib/cfg.sh:** A `repo_regex` cfg key (github and gitlab), used instead of `repo_filename` when a glob can't say it, like `SoH-.*(\.appimage|-Linux\.zip)` for a project that ships either a bare AppImage or a Linux zip. It's anchored to the whole asset name; a cfg must set exactly one of the two, and a regex that doesn't compile skips the item before any request. Within a release the first matching asset in GitHub's order wins *(Claude, directed by user)*
 - **lib/managers.sh:** `repo_filename` takes alternatives separated by `|` (github and gitlab), like `SoH-*.appimage|SoH-*-Linux.zip` for a project that has shipped both a bare AppImage and a zip. The newest release with any match wins, and within a release the first alternative that matches; a single glob works as before. Without this, a release in the other format was skipped and the item kept reporting "up to date" on the last release in the old format *(Claude, directed by user)*
+
+### Removed
+- **lib/managers.sh:** The `|` alternatives in `repo_filename` from earlier the same day, replaced by `repo_regex` before any cfg used them *(Claude, directed by user)*
 
 ---
 
