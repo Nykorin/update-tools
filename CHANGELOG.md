@@ -20,6 +20,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **lib/appimages.sh:** The `~/AppImages/.icons/` folder (no longer created or written; the existing one is left alone) *(Claude, directed by user)*
 - **lib/appimages.sh:** The icon-theme lookup above, reverted the same day before any real run used it: desktop entries point at `~/AppImages/.icons/NAME.*` again, extracted once per app as before *(Claude, directed by user)*
 
+### Fixed
+- **lib/appimages.sh:** An AppImage's icon was extracted only once, so a release with a new icon kept showing the old one; it's re-extracted on every install and update, replacing the old file even when the extension changes. An AppImage without an icon keeps whatever is in `.icons/` (an icon added by hand) *(Claude, directed by user)*
+
 ---
 
 ## [2026-10-14]

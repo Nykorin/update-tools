@@ -52,20 +52,22 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && \
         embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
-    if [[ -z "$(icon_exists "$ICONS_DIR" "$name")" ]]; then
-        # tiers, in priority order, as "dir:maxdepth:sorted"
-        local icon_src="" tier icon_dir maxdepth sorted
-        for tier in "$squashfs_root:1:" "$squashfs_root/usr/share/icons::sorted" "$squashfs_root::"; do
-            IFS=: read -r icon_dir maxdepth sorted <<<"$tier"
-            icon_src=$(find_icon "$icon_dir" "$maxdepth" "$sorted")
-            [[ -n "$icon_src" ]] && break
-        done
-        if [[ -n "$icon_src" ]]; then
-            cp "$icon_src" "${icon_dest}.${icon_src##*.}"
-            status "🖼 icon extracted"
-        else
-            say "  ⚠ No icon found for $name"
-        fi
+    # re-extracted every time, so a changed icon in a new release comes along; the
+    # old file goes first (it may have another extension). An AppImage without an
+    # icon leaves whatever is there, such as one added by hand.
+    # tiers, in priority order, as "dir:maxdepth:sorted"
+    local icon_src="" tier icon_dir maxdepth sorted
+    for tier in "$squashfs_root:1:" "$squashfs_root/usr/share/icons::sorted" "$squashfs_root::"; do
+        IFS=: read -r icon_dir maxdepth sorted <<<"$tier"
+        icon_src=$(find_icon "$icon_dir" "$maxdepth" "$sorted")
+        [[ -n "$icon_src" ]] && break
+    done
+    if [[ -n "$icon_src" ]]; then
+        find "$ICONS_DIR" -maxdepth 1 \( -iname "$name.png" -o -iname "$name.svg" -o -iname "$name.xpm" -o -iname "$name.ico" \) -delete
+        cp -L "$icon_src" "${icon_dest}.${icon_src##*.}"
+        status "🖼 icon extracted"
+    elif [[ -z "$(icon_exists "$ICONS_DIR" "$name")" ]]; then
+        say "  ⚠ No icon found for $name"
     fi
 
     local icon_path; icon_path=$(icon_exists "$ICONS_DIR" "$name")
