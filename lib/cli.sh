@@ -30,7 +30,8 @@ Modes:
 Options:
   -m, --mode MODE   what to update (required; see Modes)
   -c, --check       only look for updates: download and change nothing
-  -f, --force       check every item, even ones already checked today
+  -f, --force       check every item, even ones already checked today; for
+                    AppImages, also rebuild each desktop entry and its icon
   -r, --root DIR    use DIR instead of the mode's folder (not with -m all)
   -d, --debug       explain each decision and time each item (or DEBUG=1)
   -h, --help        show this help

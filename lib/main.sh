@@ -65,15 +65,24 @@ load_module() {
 }
 
 # The "up to date" result, the same for every updater: the version, then the cfg
-# saved (not with -c, which writes nothing); AppImages also refresh their desktop
-# entry.
+# saved (not with -c, which writes nothing). AppImages also get their desktop
+# entry: rebuilt with its icon re-extracted under -f, like an update would,
+# otherwise only recreated if it's missing.
 report_up_to_date() {
+    if [[ "$check_only" != true ]]; then
+        save_update_metadata "$cfg_file"
+        case "$ITEM_TYPE" in
+            app)
+                if [[ "$force" == true ]]; then
+                    generate_desktop_entry "$name" "$installed_path"
+                else
+                    ensure_desktop_entry "$name" "$installed_path"
+                fi
+                ;;
+        esac
+    fi
+    # the result line last, as after an update
     status_final "✓ up to date (${latest_tag:-$installed_file})"
-    [[ "$check_only" == true ]] && return 0
-    save_update_metadata "$cfg_file"
-    case "$ITEM_TYPE" in
-        app) ensure_desktop_entry "$name" "$installed_path" ;;
-    esac
 }
 
 # Walks every cfg; a function of its own so -d can time the whole run.
