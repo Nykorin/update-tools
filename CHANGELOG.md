@@ -6,6 +6,13 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-10-16]
+
+### Added
+- **lib/managers.sh:** `repo_filename` takes alternatives separated by `|` (github and gitlab), like `SoH-*.appimage|SoH-*-Linux.zip` for a project that has shipped both a bare AppImage and a zip. The newest release with any match wins, and within a release the first alternative that matches; a single glob works as before. Without this, a release in the other format was skipped and the item kept reporting "up to date" on the last release in the old format *(Claude, directed by user)*
+
+---
+
 ## [2026-10-14]
 
 ### Added

@@ -22,18 +22,32 @@ glob_to_regex() {
     printf '^%s$' "$out"
 }
 
+# repo_filename's alternatives, "a.AppImage|b-Linux.zip", as a JSON array of
+# anchored regexes in the same order: the pickers try them in turn, so the first
+# alternative with a match wins within a release. A file name can't hold "|".
+globs_to_regexes() {
+    local glob
+    local -a alts regexes=()
+    IFS='|' read -ra alts <<<"$1"
+    for glob in "${alts[@]}"; do
+        [[ -n "$glob" ]] && regexes+=("$(glob_to_regex "$glob")")
+    done
+    jq -cn '$ARGS.positional' --args "${regexes[@]}"
+}
+
 # Print "<tag>\t<url>\t<digest>" for the newest suitable release that has a
-# matching asset. <digest> is GitHub's sha256, or "updated:<time>" for older
-# assets without one. $3 = true|false → whether pre-releases are eligible.
+# matching asset; $2 = globs_to_regexes' array, tried in order within a release.
+# <digest> is GitHub's sha256, or "updated:<time>" for older assets without one.
+# $3 = true|false → whether pre-releases are eligible.
 pick_github_asset() {
-    local json="$1" regex="$2" include_pre="$3"
-    jq -r --arg pat "$regex" --argjson pre "$include_pre" '
+    local json="$1" pats="$2" include_pre="$3"
+    jq -r --argjson pats "$pats" --argjson pre "$include_pre" '
         if type != "array" then empty else
             [ .[]
               | select((.draft // false) | not)
               | select($pre or ((.prerelease // false) | not))
               | . as $r
-              | ([ $r.assets[] | select(.name | test($pat)) ][0]) as $a
+              | ([ $pats[] as $p | $r.assets[] | select(.name | test($p)) ][0]) as $a
               | select($a != null)
               | [$r.tag_name, $a.browser_download_url, ($a.digest // ($a.updated_at | if . then "updated:" + . else "" end))] ]
             | (.[0] // empty) | @tsv
@@ -41,12 +55,12 @@ pick_github_asset() {
 }
 
 pick_gitlab_asset() {
-    local json="$1" regex="$2"
-    jq -r --arg pat "$regex" '
+    local json="$1" pats="$2"
+    jq -r --argjson pats "$pats" '
         if type != "array" then empty else
             [ .[]
               | . as $r
-              | ([ ($r.assets.links // [])[] | select(.name | test($pat)) ][0]) as $a
+              | ([ $pats[] as $p | ($r.assets.links // [])[] | select(.name | test($p)) ][0]) as $a
               | select($a != null)
               | [$r.tag_name, ($a.direct_asset_url // $a.url), $a.name] ]
             | (.[0] // empty) | @tsv
@@ -197,8 +211,8 @@ resolve_latest_asset() {
             fi
             (( rc )) && return "$rc"
 
-            local regex result pre all_json page_url="$api_url" first_etag="$remote_etag"
-            regex=$(glob_to_regex "$repo_filename")
+            local pats result pre all_json page_url="$api_url" first_etag="$remote_etag"
+            pats=$(globs_to_regexes "$repo_filename")
 
             case "${allow_prereleases:-auto}" in
                 false|auto) pre=false ;;
@@ -212,18 +226,18 @@ resolve_latest_asset() {
             # Older releases live on later pages (100 each); fetch them only while
             # nothing matches. The ETag stays page 1's: any new release lands there.
             all_json="$release_json"
-            result=$(pick_github_asset "$all_json" "$regex" "$pre")
+            result=$(pick_github_asset "$all_json" "$pats" "$pre")
             while [[ -z "$result" && -n "${GITHUB_NEXT[$page_url]:-}" ]]; do
                 page_url="${GITHUB_NEXT[$page_url]}"
                 debug "no match yet, fetching the next page of releases"
                 github_releases "$page_url" || return
                 all_json=$(jq -s 'add' <<<"$all_json$release_json")
-                result=$(pick_github_asset "$all_json" "$regex" "$pre")
+                result=$(pick_github_asset "$all_json" "$pats" "$pre")
             done
             remote_etag="$first_etag"
             # auto: a stable release on any page beats a pre-release
             if [[ -z "$result" && "${allow_prereleases:-auto}" == auto ]]; then
-                result=$(pick_github_asset "$all_json" "$regex" true)
+                result=$(pick_github_asset "$all_json" "$pats" true)
             fi
 
             IFS=$'\t' read -r latest_tag asset_url remote_digest <<<"$result"
@@ -240,7 +254,7 @@ resolve_latest_asset() {
             project="${project%/}"; project="${project%.git}"
             gitlab_releases "$project" || return
             local result
-            result=$(pick_gitlab_asset "$release_json" "$(glob_to_regex "$repo_filename")")
+            result=$(pick_gitlab_asset "$release_json" "$(globs_to_regexes "$repo_filename")")
             # the link's own name: URLs often end in /download or carry ?job=…
             IFS=$'\t' read -r latest_tag asset_url asset_name <<<"$result"
             asset_name="${asset_name//\//_}"
