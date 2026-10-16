@@ -18,6 +18,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ### Removed
 - **lib/managers.sh:** The `|` alternatives in `repo_filename` from earlier the same day, replaced by `repo_regex` before any cfg used them *(Claude, directed by user)*
 - **lib/appimages.sh:** The `~/AppImages/.icons/` folder (no longer created or written; the existing one is left alone) *(Claude, directed by user)*
+- **lib/appimages.sh:** The icon-theme lookup above, reverted the same day before any real run used it: desktop entries point at `~/AppImages/.icons/NAME.*` again, extracted once per app as before *(Claude, directed by user)*
 
 ---
 
