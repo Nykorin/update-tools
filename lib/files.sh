@@ -1,44 +1,36 @@
 # shellcheck shell=bash disable=SC2154
-# files.sh: archives, checksums, setting the old version aside, and choosing the install name. Loaded by load.sh.
+# files.sh: archives (extract), checksums, setting the old version aside, and choosing the install name. Loaded by load.sh.
 # Cfg keys (manager, url, ...) are set by load_cfg through printf -v, and the
 # per-item variables by process_item, so shellcheck can't see them assigned here.
 
-extract_archive() {
-    local archive="$1" dest_dir="$2"
-    case "$archive" in
-        *.tar.gz|*.tgz)   tar -xzf "$archive" -C "$dest_dir" ;;
-        *.tar.xz)         tar -xJf "$archive" -C "$dest_dir" ;;
-        *.tar.bz2)        tar -xjf "$archive" -C "$dest_dir" ;;
-        *.tar)            tar -xf  "$archive" -C "$dest_dir" ;;
-        *.zip)            unzip -q -o "$archive" -d "$dest_dir" ;;
-        *)                return 1 ;;
-    esac
-}
-
-# Extract a single member from a zip or tar archive to a destination file.
-# Usage: extract_member <archive> <member> <dest_file>
-extract_member() {
-    local archive="$1" member="$2" dest="$3"
+# extract ARCHIVE DEST [MEMBER]: without MEMBER, unpack everything into folder
+# DEST; with it, write just that member to file DEST (fails if it comes out
+# empty). Any other extension returns 1.
+extract() {
+    local archive="$1" dest="$2" member="${3:-}" tarz="" ch
     case "$archive" in
         *.zip)
-            # unzip treats member arguments as globs — escape special chars
-            local escaped="$member" ch
+            if [[ -z "$member" ]]; then
+                unzip -q -o "$archive" -d "$dest"
+                return
+            fi
+            # unzip treats member arguments as globs, so escape them
             for ch in "\\" '[' ']' '*' '?'; do
-                escaped="${escaped//"$ch"/\\"$ch"}"
+                member="${member//"$ch"/\\"$ch"}"
             done
-            unzip -p "$archive" "$escaped" > "$dest"
+            unzip -p "$archive" "$member" > "$dest"
             ;;
-        *.tar.gz|*.tgz)
-            tar -xzOf "$archive" "$member" > "$dest"
-            ;;
-        *.tar.xz)
-            tar -xJOf "$archive" "$member" > "$dest"
-            ;;
-        *.tar.bz2)
-            tar -xjOf "$archive" "$member" > "$dest"
-            ;;
-        *.tar)
-            tar -xOf "$archive" "$member" > "$dest"
+        *.tar.gz|*.tgz|*.tar.xz|*.tar.bz2|*.tar)
+            case "$archive" in
+                *.tar.gz|*.tgz) tarz=z ;;
+                *.tar.xz)       tarz=J ;;
+                *.tar.bz2)      tarz=j ;;
+            esac
+            if [[ -z "$member" ]]; then
+                tar -x${tarz}f "$archive" -C "$dest"
+                return
+            fi
+            tar -x${tarz}Of "$archive" "$member" > "$dest"
             ;;
         *)
             return 1

@@ -31,7 +31,7 @@ unbundle_apworld() {
 
     member="${matches[0]}"
     extracted="$TMP_DIR/extracted.apworld"
-    if ! extract_member "$tmp_download" "$member" "$extracted"; then
+    if ! extract "$tmp_download" "$extracted" "$member"; then
         say "  ✗ $name: could not extract $member"
         rm -f "$extracted"
         return 1
@@ -51,7 +51,7 @@ unbundle_apworld() {
 
 ITEM_LOCALS=(zip_listing)
 
-# extract_member picks the unpacker by extension; every world is a zip
+# extract picks the unpacker by extension; every world is a zip
 item_stage() {
     tmp_download="$TMP_DIR/download.zip"
 }

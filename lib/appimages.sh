@@ -104,7 +104,7 @@ item_validate() {
             tmp_extract_dir="$TMP_DIR/archive"
             rm -rf "$tmp_extract_dir"
             mkdir -p "$tmp_extract_dir"
-            if ! extract_archive "$tmp_download" "$tmp_extract_dir"; then
+            if ! extract "$tmp_download" "$tmp_extract_dir"; then
                 say "  ✗ Failed to extract archive for $name"
                 return 1
             fi
