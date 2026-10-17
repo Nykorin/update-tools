@@ -22,11 +22,12 @@ checksum_for() {
         END { if (best) print (best == 128 ? "sha512" : "sha256"), tolower(h) }' <<<"$1"
 }
 
+# The item_prepare_check hook: ISOs are compared, and later verified, by checksum.
 # Fetches the checksum for asset_name: sets sum_url, sum_text, algo and want
 # (ITEM_LOCALS). A relative checksum is next to the ISO; for static, next
 # to the cfg's URL (Garuda's latest.iso.sha256 sits beside latest.iso, not where it
 # redirects). Returns 1 to skip the item.
-fetch_checksum() {
+item_prepare_check() {
     local dir_url sum found glob_rc
     if [[ "$manager" == static ]]; then
         dir_url="${url%/*}/"
@@ -75,11 +76,6 @@ item_setup() {
     fi
     dir="$ISO_DIR/$folder"
     require_keys "an ISO cfg" checksum
-}
-
-# ISOs are compared, and later verified, by checksum
-item_prepare_check() {
-    fetch_checksum
 }
 
 # keep 256 MiB spare; the old ISO stays until the new one verifies

@@ -18,6 +18,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **lib/appimages.sh:** Desktop entries name their icon (`Icon=ICON`, from the AppImage's own `.desktop`) instead of pointing at a file, so the active icon theme supplies it when it has the app (DuckStation, Dusklight, ES-DE and LM Studio with the current theme), and a theme switch applies at once. The AppImage's own icons go into `~/.local/share/icons/hicolor/` as the fallback (was `~/AppImages/.icons/`), and every update reinstalls them, so a changed icon is no longer missed. Entries still pointing into `.icons/` are rebuilt on their next run *(Claude, directed by user)*
 
 ### Removed
+- **lib/isos.sh, lib/cli.sh:** Two pass-through functions: `fetch_checksum` is now the ISOs' `item_prepare_check` hook itself (the hook only called it), and `mode_name` is folded into `set_mode`, its one caller. Behavior is unchanged *(Claude, directed by user)*
 - **lib/managers.sh:** The `|` alternatives in `repo_filename` from earlier the same day, replaced by `repo_regex` before any cfg used them *(Claude, directed by user)*
 - **lib/appimages.sh:** The `~/AppImages/.icons/` folder (no longer created or written; the existing one is left alone) *(Claude, directed by user)*
 - **lib/appimages.sh:** The icon-theme lookup above, reverted the same day before any real run used it: desktop entries point at `~/AppImages/.icons/NAME.*` again, extracted once per app as before *(Claude, directed by user)*

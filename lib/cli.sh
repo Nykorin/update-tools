@@ -38,16 +38,6 @@ Options:
 EOF
 }
 
-# A mode's short name, for either spelling; returns 1 for an unknown one.
-mode_name() {
-    case "$1" in
-        app|appimages) echo app ;;
-        apw|apworlds)  echo apw ;;
-        iso|isos)      echo iso ;;
-        all)           echo all ;;
-        *)             return 1 ;;
-    esac
-}
 
 # Sets MODE (-m), force, check_only, DEBUG, and ROOT_ARG (-r); -h prints usage,
 # and a bad option prints it to stderr.
@@ -77,9 +67,16 @@ parse_flags() {
     done
 }
 
+# MODE, the short name for either spelling of mode $1.
 # shellcheck disable=SC2034  # MODE is read by update_tools (main.sh)
 set_mode() {
-    if ! MODE=$(mode_name "$1"); then
-        echo "${0##*/}: unknown mode '$1' (app, apw, iso or all)" >&2; usage >&2; exit 2
-    fi
+    case "$1" in
+        app|appimages) MODE=app ;;
+        apw|apworlds)  MODE=apw ;;
+        iso|isos)      MODE=iso ;;
+        all)           MODE=all ;;
+        *)
+            echo "${0##*/}: unknown mode '$1' (app, apw, iso or all)" >&2; usage >&2; exit 2
+            ;;
+    esac
 }

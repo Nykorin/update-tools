@@ -389,7 +389,7 @@ is_up_to_date() {
     local sum
     (( remote_unchanged )) && return 0
     # ISOs compare checksums whatever the manager; algo and want come from
-    # update-isos' fetch_checksum
+    # isos.sh's item_prepare_check
     if [[ "${ITEM_TYPE:-}" == iso ]]; then
         if [[ "${iso_hash:-}" != "$algo:"* ]]; then
             status "🔍 hashing ${1##*/}"
