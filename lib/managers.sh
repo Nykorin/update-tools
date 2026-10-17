@@ -414,6 +414,16 @@ is_up_to_date() {
             # compare only what the server sent and the cfg has saved; with
             # nothing to compare (a new cfg), it isn't up to date
             local known=0 changed=0
+            # the version ends in the file's name (static-SIZE-ETAG-NAME): a URL
+            # that now lands on another file isn't up to date, even at the same
+            # size and date. A version saved before names were in it
+            # (static-SIZE or the ETag) can't tell, so the other checks decide.
+            local unnamed="static-${remote_length:-${remote_etag//\"/}}"
+            if [[ -n "${current_version:-}" && "$current_version" != "$unnamed" &&
+                  "$current_version" != *"-$asset_name" ]]; then
+                debug "file name changed: now $asset_name, saved version $current_version"
+                return 1
+            fi
             [[ -n "$remote_length" && -n "${content_length:-}" ]] && { known=1; [[ "$remote_length" == "$content_length" ]] || changed=1; }
             [[ -n "$remote_modified" && -n "${last_modified:-}" ]] && { known=1; [[ "$remote_modified" == "$last_modified" ]] || changed=1; }
             [[ -n "$remote_etag" && -n "${etag:-}" ]] && { known=1; [[ "$remote_etag" == "$etag" ]] || changed=1; }
