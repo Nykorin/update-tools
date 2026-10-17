@@ -1,7 +1,7 @@
 # shellcheck shell=bash disable=SC2154
-# files.sh: archives (extract), checksums, setting the old version aside, and choosing the install name. Loaded by load.sh.
-# Cfg keys (manager, url, ...) are set by load_cfg through printf -v, and the
-# per-item variables by process_item, so shellcheck can't see them assigned here.
+# files.sh: archives (extract), checksums, setting the old version aside, and
+# choosing the install name. Loaded by load.sh.
+# SC2154: cfg keys and per-item variables are assigned outside this file.
 
 # extract ARCHIVE DEST [MEMBER]: without MEMBER, unpack everything into folder
 # DEST; with it, write just that member to file DEST (fails if it comes out
@@ -119,11 +119,11 @@ recover_previous() {
     done < <(find "$TMP_DIR" -type f -name '*.previous' -print0)
 }
 
-# Sets new_name, the name to install under: CANDIDATE (the upstream name, versions
-# and casing included) if it ends in .ITEM_EXT (any case), so the desktop,
-# Archipelago or Ventoy recognises it; otherwise the installed file's name, or on a
-# first install the cfg's name with the extension. Sets a variable rather than
-# printing, so its debug line isn't captured by $(...).
+# Sets new_name, the name to install under: CANDIDATE (the upstream name,
+# versions and casing included) if it ends in .ITEM_EXT (any case), so the
+# desktop, Archipelago or Ventoy recognises it; otherwise the installed file's
+# name, or on a first install the cfg's name with the extension. Sets a variable
+# rather than printing, so its debug line isn't captured by $(...).
 pick_name() {
     local ext
     case "$ITEM_TYPE" in

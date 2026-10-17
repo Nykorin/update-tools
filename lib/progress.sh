@@ -78,7 +78,7 @@ curl_run() {
     CURL_LOG=$(mktemp)
     COLUMNS="$PROGRESS_COLS" curl "$@" 2>&1 | tee "$CURL_LOG"
     rc=${PIPESTATUS[0]}
-    # rows = line breaks + wraps; only the text after the last \r is still on screen
+    # rows = line breaks + wraps; only text after the last \r is still shown
     read -r CURL_ROWS CURL_BLANK < <(awk -v cols="$PROGRESS_COLS" '
         { sub(/\r+$/, ""); sub(/.*\r/, ""); n = length($0)
           if (n) { wraps += int((n - 1) / cols); blank = 0 } else blank++ }

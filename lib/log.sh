@@ -1,11 +1,7 @@
 # shellcheck shell=bash disable=SC2154
 # log.sh: debug lines and -d timings. Loaded by load.sh.
-# Cfg keys (manager, url, ...) are set by load_cfg through printf -v, and the
-# per-item variables by process_item, so shellcheck can't see them assigned here.
+# SC2154: cfg keys and per-item variables are assigned outside this file.
 
-# ---------------------------------------------------------------------------
-# Debugging and timing (-d/--debug, or DEBUG=1)
-# ---------------------------------------------------------------------------
 case "${DEBUG:-0}" in 0|"") DEBUG=0 ;; *) DEBUG=1 ;; esac
 
 # A decision-trace line. It goes through say, so never call it inside $(...)

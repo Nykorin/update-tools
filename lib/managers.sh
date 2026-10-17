@@ -1,7 +1,7 @@
 # shellcheck shell=bash disable=SC2154
-# managers.sh: the managers (github, gitlab, jsonfeed, static, dirlist, dateprobe) and the up-to-date test. Loaded by load.sh.
-# Cfg keys (manager, url, ...) are set by load_cfg through printf -v, and the
-# per-item variables by process_item, so shellcheck can't see them assigned here.
+# managers.sh: the managers (github, gitlab, jsonfeed, static, dirlist,
+# dateprobe) and the up-to-date test. Loaded by load.sh.
+# SC2154: cfg keys and per-item variables are assigned outside this file.
 
 # ---------------------------------------------------------------------------
 # GitHub / GitLab asset helpers
@@ -24,15 +24,15 @@ glob_to_regex() {
 
 # Sets asset_pat, the anchored regex an asset's name must match: repo_regex as
 # written (for what a glob can't say, like SoH-.*(\.appimage|-Linux\.zip)), or
-# the repo_filename glob converted. $1 = the manager, for the messages. Returns 1,
-# having said why, unless exactly one of them is set and the regex compiles.
+# the repo_filename glob converted. $1 = the manager, for the messages. Returns
+# 1, having said why, unless exactly one of them is set and the regex compiles.
 asset_regex() {
     if [[ -n "${repo_regex:-}" && -n "${repo_filename:-}" ]]; then
         say "⚠ ${PROGRESS_LABEL:-}: set repo_filename or repo_regex, not both, skipping"
         return 1
     elif [[ -n "${repo_regex:-}" ]]; then
         asset_pat="^(?:$repo_regex)\$"
-        # jq exits non-zero on a regex it can't compile, before any request is made
+        # jq fails on a regex it can't compile, before any request is made
         if ! jq -n --arg r "$asset_pat" '"" | test($r)' >/dev/null 2>&1; then
             say "⚠ ${PROGRESS_LABEL:-}: repo_regex '$repo_regex' isn't a valid regex, skipping"
             return 1
@@ -82,9 +82,10 @@ pick_gitlab_asset() {
 # ---------------------------------------------------------------------------
 # Names in a server's directory listing, folders with a trailing "/". Copes with
 # plain index pages and SourceForge (absolute links ending in "/download").
-# Returns 1 when the folder isn't there (404, 410: a definite answer, so the next
-# candidate may be tried; SourceForge lists links like "Docs Home/" that 404), and
-# 2 when the server gave no answer (timeout, connection error, other HTTP errors).
+# Returns 1 when the folder isn't there (404, 410: a definite answer, so the
+# next candidate may be tried; SourceForge lists links like "Docs Home/" that
+# 404), and 2 when the server gave no answer (timeout, connection error, other
+# HTTP errors).
 list_dir() {
     local page code
     page=$(curl -sL "${CURL_META[@]}" -w '\n%{http_code}' "$1") || return 2
@@ -103,9 +104,9 @@ list_dir() {
 
 # The stdin entries matching glob $1, newest first, judged by the numbers in the
 # part the wildcards matched: EndeavourOS_Titan-Nova-2026.08.15 must beat
-# Ganymede-Neo-2026.01.12, and the fixed "amd64" in a name must not count. Entries
-# without any number there come last; URL escapes don't count as numbers (the 20 in
-# SourceForge's "Docs%20Home/").
+# Ganymede-Neo-2026.01.12, and the fixed "amd64" in a name must not count.
+# Entries without any number there come last; URL escapes don't count as numbers
+# (the 20 in SourceForge's "Docs%20Home/").
 sort_newest() {
     local glob="$1" entry head tail
     head="${glob%%[\[*?]*}"; tail="${glob##*\*}"
@@ -118,12 +119,12 @@ sort_newest() {
           print (k == "" ? 0 : 1) "\t" k "\t" $0 }' | sort -t $'\t' -k1,1nr -k2,2Vr -k3,3Vr | cut -f3
 }
 
-# $1 = URL so far (ending in "/"), rest = the remaining path segments. A glob in a
-# folder falls back to the next-newest match (up to 3) when the rest finds nothing,
-# e.g. a new release folder that so far holds only a beta. Returns 0 (prints the
-# URL), 1 (nothing matches, or the folder isn't there) or 2 (the server gave no
-# answer for a folder: prints that folder, and doesn't fall back, since an older
-# folder would offer a downgrade).
+# $1 = URL so far (ending in "/"), rest = the remaining path segments. A glob in
+# a folder falls back to the next-newest match (up to 3) when the rest finds
+# nothing, e.g. a new release folder that so far holds only a beta. Returns 0
+# (prints the URL), 1 (nothing matches, or the folder isn't there) or 2 (the
+# server gave no answer for a folder: prints that folder, and doesn't fall back,
+# since an older folder would offer a downgrade).
 resolve_segments() {
     local prefix="$1" seg="$2" cand listing rc
     shift 2
@@ -150,23 +151,24 @@ resolve_segments() {
     return 1
 }
 
-# Expand each glob segment of URL $1 against the server's listings. Prints the URL,
-# or with return code 2 the folder that couldn't be listed (see resolve_segments).
-# Runs inside $(...), so the caller reports a failure: a say here would be captured.
+# Expand each glob segment of URL $1 against the server's listings. Prints the
+# URL, or with return code 2 the folder that couldn't be listed (see
+# resolve_segments). Runs inside $(...), so the caller reports a failure: a say
+# here would be captured.
 resolve_glob_url() {
     local -a segs
     IFS=/ read -ra segs <<<"${1#*://}"
     resolve_segments "${1%%://*}://${segs[0]}/" "${segs[@]:1}"
 }
 
-# The static manager's lookup, shared with update-isos: one HEAD request that
-# follows redirects. Sets asset_url (where it landed), asset_name, remote_length,
-# remote_modified, remote_etag, and latest_tag: static-SIZE-ETAG-NAME, leaving
-# out what the server didn't send (Beeper and LM Studio put the version in the
-# name, Mudlet only in the size). Returns 1 to skip the item.
+# The static manager's lookup: one HEAD request that follows redirects. Sets
+# asset_url (where it landed), asset_name, remote_length, remote_modified,
+# remote_etag, and latest_tag: static-SIZE-ETAG-NAME, leaving out what the
+# server didn't send (Beeper and LM Studio put the version in the name, Mudlet
+# only in the size). Returns 1 to skip the item.
 static_head() {
     local url="$1" curl_out headers part
-    # -f: a 404 or a timeout means there's nothing to compare, so skip the item
+    # curl -f: a 404 or a timeout leaves nothing to compare, so skip the item
     if ! curl_out=$(curl -fsIL "${CURL_META[@]}" -w '\n%{url_effective}' "$url"); then
         say "⚠ ${PROGRESS_LABEL:-}: could not reach $url, skipping"
         return 1
@@ -208,7 +210,8 @@ resolve_latest_asset() {
             asset_regex github || return 1
 
             # Fetch the list, not /latest, to honour allow_prereleases=auto.
-            # per_page=100: repos that host several games bury older ones past the default 30.
+            # per_page=100: repos that host several games bury older ones past
+            # the default 30.
             local api_url="https://api.github.com/repos/${repo}/releases?per_page=100"
             local release_json rc
             github_releases "$api_url" "${etag:-}"; rc=$?
@@ -231,8 +234,9 @@ resolve_latest_asset() {
                     ;;
             esac
 
-            # Older releases live on later pages (100 each); fetch them only while
-            # nothing matches. The ETag stays page 1's: any new release lands there.
+            # Older releases live on later pages (100 each); fetch them only
+            # while nothing matches. The ETag stays page 1's: any new release
+            # lands there.
             all_json="$release_json"
             result=$(pick_github_asset "$all_json" "$asset_pat" "$pre")
             while [[ -z "$result" && -n "${GITHUB_NEXT[$page_url]:-}" ]]; do
@@ -309,8 +313,8 @@ resolve_latest_asset() {
             fi
             asset_url="$found"
             asset_name="${asset_url##*/}"
-            # never offer an older build than the installed one (the newest folder
-            # 404s while a mirror syncs, say): rank both by the URL's file glob
+            # never offer an older build than the installed one (the newest
+            # folder 404s while a mirror syncs, say), ranked by the URL's glob
             if [[ -n "${installed_file:-}" && "$asset_name" != "$installed_file" ]] &&
                [[ $(printf '%s\n' "$asset_name" "$installed_file" | sort_newest "${url##*/}" | head -n 1) == "$installed_file" ]]; then
                 say "⚠ ${PROGRESS_LABEL:-}: the server's newest is $asset_name, older than the installed $installed_file, skipping"
@@ -322,9 +326,9 @@ resolve_latest_asset() {
 
         dateprobe)
             require_keys "dateprobe manager" url || return 1
-            # no listing (Nobara's bucket): try dates from today back, stopping at the
-            # installed one; each try is one small HEAD request, on the checksum file
-            # when the cfg names one
+            # no listing (Nobara's bucket): try dates from today back, stopping
+            # at the installed one; each try is one small HEAD request, on the
+            # checksum file when the cfg names one
             local cand probe day day_s now cur_date=""
             [[ "${installed_file:-}" =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]] && cur_date="${BASH_REMATCH[0]}"
             printf -v now '%(%s)T' -1
@@ -372,8 +376,9 @@ resolve_latest_asset() {
 }
 
 # The version to show for a result: latest_tag, plus file name $1 in brackets
-# unless the tag already ends in it (a static tag ends in -NAME, a dirlist tag is
-# the name). Not a substring test: pokemon_emerald.apworld contains emerald.apworld.
+# unless the tag already ends in it (a static tag ends in -NAME, a dirlist tag
+# is the name). Not a substring test: pokemon_emerald.apworld ends in
+# emerald.apworld.
 shown_version() {
     local shown="${latest_tag:-}" file="${1:-}"
     if [[ -n "$file" && "$shown" != "$file" && "$shown" != *"-$file" ]]; then
@@ -382,9 +387,9 @@ shown_version() {
     printf '%s\n' "$shown"
 }
 
-# Returns 0 if the item is already up to date.
-# $1 = the installed file, hashed once for github cfgs saved before asset_digest,
-# and for ISOs without an iso_hash for the checksum's algorithm.
+# Returns 0 if the item is already up to date. $1 = the installed file, hashed
+# once for github cfgs saved before asset_digest, and for ISOs without an
+# iso_hash for the checksum's algorithm.
 is_up_to_date() {
     local sum
     (( remote_unchanged )) && return 0
@@ -406,8 +411,8 @@ is_up_to_date() {
                 say "⚠ ${PROGRESS_LABEL:-}: the server gives no size, date or ETag, so it can't tell whether it changed; downloading again"
                 return 1
             fi
-            # compare only what the server sent and the cfg has saved; with nothing to
-            # compare (a new cfg), it isn't up to date
+            # compare only what the server sent and the cfg has saved; with
+            # nothing to compare (a new cfg), it isn't up to date
             local known=0 changed=0
             [[ -n "$remote_length" && -n "${content_length:-}" ]] && { known=1; [[ "$remote_length" == "$content_length" ]] || changed=1; }
             [[ -n "$remote_modified" && -n "${last_modified:-}" ]] && { known=1; [[ "$remote_modified" == "$last_modified" ]] || changed=1; }
@@ -417,7 +422,7 @@ is_up_to_date() {
         github)
             debug "tag ${latest_tag:-?} vs installed ${current_version:-none}"
             [[ "$latest_tag" == "${current_version:-}" ]] || return 1
-            # same tag, but rolling releases (latest, continuous) re-upload the asset
+            # same tag, but rolling releases (latest, continuous) re-upload
             if [[ -n "${asset_digest:-}" ]]; then
                 debug "same tag; asset digest ${remote_digest:0:23}… vs saved ${asset_digest:0:23}…"
                 [[ "$remote_digest" == "$asset_digest" ]]

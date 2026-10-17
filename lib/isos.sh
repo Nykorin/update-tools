@@ -5,10 +5,10 @@
 # with the other modules. It reads (SC2154) and sets (SC2034) variables that
 # main.sh and the shared libraries own.
 
-# "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines ("hash  name",
-# "hash *name", "hash  ./name") and BSD lines ("SHA256 (name) = hash"), matching
-# on the file name alone (Ultramarine lists build paths); sha512 wins over sha256,
-# and md5/sha1 entries are ignored.
+# "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines
+# ("hash  name", "hash *name", "hash  ./name") and BSD lines
+# ("SHA256 (name) = hash"), matching on the file name alone (Ultramarine lists
+# build paths); sha512 wins over sha256, and md5/sha1 entries are ignored.
 checksum_for() {
     awk -v want="$2" '
         { name = ""; hash = "" }
@@ -22,11 +22,11 @@ checksum_for() {
         END { if (best) print (best == 128 ? "sha512" : "sha256"), tolower(h) }' <<<"$1"
 }
 
-# The item_prepare_check hook: ISOs are compared, and later verified, by checksum.
-# Fetches the checksum for asset_name: sets sum_url, sum_text, algo and want
-# (ITEM_LOCALS). A relative checksum is next to the ISO; for static, next
-# to the cfg's URL (Garuda's latest.iso.sha256 sits beside latest.iso, not where it
-# redirects). Returns 1 to skip the item.
+# The item_prepare_check hook: ISOs are compared, and later verified, by
+# checksum. Fetches the checksum for asset_name: sets sum_url, sum_text, algo
+# and want (ITEM_LOCALS). A relative checksum is next to the ISO; for static,
+# next to the cfg's URL (Garuda's latest.iso.sha256 sits beside latest.iso, not
+# where it redirects). Returns 1 to skip the item.
 item_prepare_check() {
     local dir_url sum found glob_rc
     if [[ "$manager" == static ]]; then
@@ -124,10 +124,11 @@ item_extras() {
 prepare_dir() {
     # process_item points dir at each ISO's folder, so keep the root
     ISO_DIR="$dir"
-    # old versions wait here during an update (as .previous, which Ventoy doesn't list)
+    # old versions wait here during an update (as .previous, which Ventoy
+    # doesn't list)
     TMP_DIR="$dir/.tmp"
-    # left over from a run that was killed outright (Ctrl+C cleans up after itself):
-    # an old version goes back, a half-downloaded ISO goes
+    # left over from a run that was killed outright (Ctrl+C cleans up after
+    # itself): an old version goes back, a half-downloaded ISO goes
     recover_previous
     find "$dir" -mindepth 1 -name '.*.iso.part' -type f -delete
 }

@@ -52,10 +52,10 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && \
         embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
-    # re-extracted every time, so a changed icon in a new release comes along; the
-    # old file goes first (it may have another extension). An AppImage without an
-    # icon leaves whatever is there, such as one added by hand.
-    # tiers, in priority order, as "dir:maxdepth:sorted"
+    # Re-extracted every time, so a changed icon in a new release comes along.
+    # The old file goes first (it may have another extension); an AppImage
+    # without an icon leaves whatever is there, such as one added by hand.
+    # Tiers, in priority order, as "dir:maxdepth:sorted".
     local icon_src="" tier icon_dir maxdepth sorted
     for tier in "$squashfs_root:1:" "$squashfs_root/usr/share/icons::sorted" "$squashfs_root::"; do
         IFS=: read -r icon_dir maxdepth sorted <<<"$tier"

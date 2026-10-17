@@ -1,11 +1,7 @@
 # shellcheck shell=bash disable=SC2154
 # cfg.sh: reading and saving the cfg files. Loaded by load.sh.
-# Cfg keys (manager, url, ...) are set by load_cfg through printf -v, and the
-# per-item variables by process_item, so shellcheck can't see them assigned here.
+# SC2154: cfg keys and per-item variables are assigned outside this file.
 
-# ---------------------------------------------------------------------------
-# Config handling
-# ---------------------------------------------------------------------------
 # Every key a cfg may hold. load_cfg sets only these: any other name could
 # overwrite one of the scripts' own variables (dir, name, HOME, PATH, ...).
 CFG_KEYS=(
@@ -84,23 +80,24 @@ update_cfg() {
     done
 }
 
-# The file the cfg's installed_file names, if it's still in folder $1: prints its
-# full path, or nothing. Runs inside $(...), so it never prints a message.
+# The file the cfg's installed_file names, if it's still in folder $1: prints
+# its full path, or nothing. Runs inside $(...), so it never prints a message.
 find_installed() {
     [[ -n "${installed_file:-}" && -f "$1/$installed_file" ]] && printf '%s\n' "$1/$installed_file"
     return 0
 }
 
-# Cfg keys the scripts keep up to date themselves, in the order new ones are added.
+# Cfg keys the scripts keep up to date themselves, in the order new ones are
+# added.
 SAVE_KEYS=(current_version last_checked content_length last_modified asset_digest etag
            installed_file iso_hash checksum_file)
 
-# Save the item's state after a successful check or update; all three updaters
-# use this. Each key takes its value from the item being handled: what
-# resolve_latest_asset found (cleared for every item), or the cfg variable of the
-# same name (installed_file, iso_hash, checksum_file), which load_cfg reloads for
-# every item and the caller updates first. Empty values aren't written, so an
-# ISO cfg never gets current_version or etag.
+# Save the item's state after a successful check or update; every mode uses
+# this. Each key takes its value from the item being handled: what
+# resolve_latest_asset found (cleared for every item), or the cfg variable of
+# the same name (installed_file, iso_hash, checksum_file), which load_cfg
+# reloads for every item and the caller updates first. Empty values aren't
+# written, so an ISO cfg never gets current_version or etag.
 save_update_metadata() {
     local cfg="$1" key value
     local -a pairs=()

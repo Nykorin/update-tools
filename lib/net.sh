@@ -1,7 +1,7 @@
 # shellcheck shell=bash disable=SC2154
-# net.sh: network timeouts, GitHub and GitLab requests, rate tracking and the GitHub token. Loaded by load.sh.
-# Cfg keys (manager, url, ...) are set by load_cfg through printf -v, and the
-# per-item variables by process_item, so shellcheck can't see them assigned here.
+# net.sh: network timeouts, GitHub and GitLab requests, rate tracking and the
+# GitHub token. Loaded by load.sh.
+# SC2154: cfg keys and per-item variables are assigned outside this file.
 
 # A server that accepts the connection and then never answers would hang a run.
 # Small requests get a hard limit; downloads only fail when they stall, so a
@@ -39,10 +39,10 @@ github_api() {
     fi
 }
 
-# Sets release_json and remote_etag for $1, fetching each URL once per run.
-# Call it directly, never inside $(...), or the cache is lost with the subshell.
-# $2 = the ETag this item saved last time; a 304 for it means nothing changed.
-# Returns 1 to skip this item, 2 when GitHub is rate limiting us, 3 if unchanged.
+# Sets release_json and remote_etag for $1, fetching each URL once per run. Call
+# it directly, never inside $(...), or the cache is lost with the subshell. $2 =
+# the ETag this item saved last time; a 304 for it means nothing changed.
+# Returns 1 to skip this item, 2 when GitHub rate limits us, 3 if unchanged.
 github_releases() {
     local api_url="$1" etag="${2:-}" response code when=""
     if [[ -n "${GITHUB_CACHE[$api_url]+set}" ]]; then
@@ -62,7 +62,7 @@ github_releases() {
     release_json="${response%$'\n'*}"
     debug "GitHub ${api_url#https://api.github.com/}${etag:+ (sent ETag)} → HTTP $code, ${GITHUB_REMAINING:-?} requests left"
     [[ -n "$GITHUB_MOVED" ]] && debug "repo ${repo:-} has moved (redirected to $GITHUB_MOVED); consider updating repo= in the cfg"
-    # GitHub doesn't count a 304 against the limit when the request carries a token
+    # a 304 doesn't count against the limit when the request carries a token
     if [[ "$code" == 304 && -n "${GITHUB_TOKEN:-}" ]]; then
         GITHUB_FREE=$((GITHUB_FREE + 1))
     else
@@ -74,7 +74,7 @@ github_releases() {
             remote_etag="$GITHUB_ETAG"
             GITHUB_CACHE[$api_url]="$release_json"
             GITHUB_ETAGS[$api_url]="$remote_etag"
-            # shellcheck disable=SC2034  # read by resolve_latest_asset (managers.sh)
+            # shellcheck disable=SC2034  # read by resolve_latest_asset
             GITHUB_NEXT[$api_url]="$GITHUB_LINK_NEXT"
             return 0
             ;;
@@ -104,8 +104,8 @@ github_releases() {
     return 1
 }
 
-# Sets release_json for GitLab project path $1. Returns 1 to skip this item.
-# A 429 skips GitLab items only, unlike GitHub's stop: other managers still work.
+# Sets release_json for GitLab project path $1. Returns 1 to skip this item. A
+# 429 skips GitLab items only, unlike GitHub's stop: other managers still work.
 GITLAB_RATE_LIMITED=0
 gitlab_releases() {
     local project="$1" response code
@@ -160,8 +160,8 @@ rate_summary() {
     STATUS="${warn}GitHub API: $GITHUB_REMAINING/$GITHUB_LIMIT requests left${when} (used $GITHUB_CALLS this run)"
 }
 
-# Shared token for both scripts.
-# Priority: $GITHUB_TOKEN env var → ~/.config/update-tools/github_token
+# The GitHub token: $GITHUB_TOKEN, else the first line of
+# ~/.config/update-tools/github_token, which should be chmod 600.
 load_github_token() {
     local token_file="${XDG_CONFIG_HOME:-$HOME/.config}/update-tools/github_token"
     if [[ -z "${GITHUB_TOKEN:-}" && -f "$token_file" ]]; then

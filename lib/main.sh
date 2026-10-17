@@ -2,9 +2,9 @@
 # main.sh: what update-tools runs. update_tools parses the flags and runs each
 # mode in its own subshell (run_mode), which loads that mode's module
 # (appimages.sh, apworlds.sh or isos.sh: prepare_dir and the hooks) and walks
-# its cfgs with the one process_item. A subshell per mode keeps one mode's variables, traps and failures
-# out of the next one under -m all. Variables the managers and cfgs set (SC2154)
-# aren't visible to shellcheck here.
+# its cfgs with the one process_item. A subshell per mode keeps one mode's
+# variables, traps and failures out of the next one under -m all.
+# SC2154: cfg keys and manager results are assigned outside this file.
 
 # Each mode's settings, by ITEM_TYPE: ITEM_TITLE (its heading under -m all),
 # ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg), ITEM_MODE (for installed files;
@@ -64,7 +64,7 @@ load_module() {
     esac
 }
 
-# The "up to date" result, the same for every updater: the version, then the cfg
+# The "up to date" result, the same for every mode: the version, then the cfg
 # saved (not with -c, which writes nothing). AppImages also get their desktop
 # entry: rebuilt with its icon re-extracted under -f, like an update would,
 # otherwise only recreated if it's missing.
@@ -95,9 +95,9 @@ run_items() {
 }
 
 # Hooks a module may define, for the steps where the modes really differ; these
-# defaults do nothing (item_stage: AppImages' staging). A hook that returns 1 has
-# said why and skips the item. ITEM_LOCALS names the variables a module's hooks
-# share, made local to each item.
+# defaults do nothing (item_stage: AppImages' staging). A hook that returns 1
+# has said why and skips the item. ITEM_LOCALS names the variables a module's
+# hooks share, made local to each item.
 ITEM_LOCALS=()
 item_setup()         { :; }   # after load_cfg (ISOs: folder= and checksum)
 item_prepare_check() { :; }   # before is_up_to_date (ISOs: fetch the checksum)
@@ -108,8 +108,8 @@ item_stage()         { tmp_download="$TMP_DIR/download-$asset_name"; }
 item_validate()      { :; }   # after downloading; may set new_file and candidate
 item_extras()        { :; }   # after installing (AppImages: desktop entry; ISOs: checksum file)
 
-# One cfg: check it, and update it if needed. The same steps for every mode, with
-# the module's hooks where they differ. Returns 2 to stop the whole run.
+# One cfg: check it, and update it if needed. The same steps for every mode,
+# with the module's hooks where they differ. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
     local rc new_file new_name candidate target
@@ -142,8 +142,8 @@ process_item() {
         return 0
     fi
 
-    # a 304 has no download URL, so ask for the full list when installing; -f always does
-    # (a static item's etag is the server's file ETag, which it still needs to compare)
+    # a 304 has no download URL, so ask for the full list when installing; -f
+    # always does (a static item's etag is the file's ETag, still needed)
     if [[ "${manager:-}" == github && ( "$force" == true || -z "$installed_path" ) ]]; then
         etag=""
         if [[ -n "$installed_path" ]]; then
@@ -161,12 +161,12 @@ process_item() {
         return 0
     fi
 
-    # nothing newer on the server, but the installed file is gone: nothing to download
+    # nothing newer on the server, but the installed file is gone
     if (( remote_unchanged )) && [[ -z "$installed_path" ]]; then
         say "⚠ $name: ${installed_file:-its file} is missing and the server has nothing newer, skipping"
         return 0
     fi
-    # nothing newer on the server (an old ISO's checksum file may be gone with it)
+    # nothing newer (an old ISO's checksum file may be gone with it)
     if (( remote_unchanged )); then
         report_up_to_date
         return 0
@@ -194,7 +194,7 @@ process_item() {
     item_stage
 
     curl_takeover
-    # -f: an HTTP error page must never replace a working item
+    # curl -f: an HTTP error page must never replace a working item
     if ! curl_run -fL "${CURL_DL[@]}" --progress-bar "$asset_url" -o "$tmp_download"; then
         curl_abandon
         say "  ✗ Failed to download update for $name"
@@ -210,15 +210,15 @@ process_item() {
         rm -rf "$tmp_extract_dir"
         return 0
     fi
-    # unless the hook found something else, it's the download under the upstream name
+    # unless the hook chose otherwise: the download, under its upstream name
     new_file="${new_file:-$tmp_download}"
     candidate="${candidate:-$asset_name}"
 
     pick_name "$candidate"
     target="$dir/$new_name"
 
-    # the installed version (and a stray file already using the new name) waits in
-    # .tmp until the new one is in place
+    # the installed version (and a stray file already using the new name) waits
+    # in .tmp until the new one is in place
     if ! set_aside "$installed_path" "$target"; then
         say "  ✗ $name: could not move the old version aside, nothing changed"
         rm -f "$tmp_download"

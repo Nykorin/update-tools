@@ -1,11 +1,7 @@
 # shellcheck shell=bash disable=SC2154
 # cli.sh: the flags and the help text. Loaded by load.sh.
-# Cfg keys (manager, url, ...) are set by load_cfg through printf -v, and the
-# per-item variables by process_item, so shellcheck can't see them assigned here.
+# SC2154: cfg keys and per-item variables are assigned outside this file.
 
-# ---------------------------------------------------------------------------
-# Flags, the same in every updater
-# ---------------------------------------------------------------------------
 ROOT_ARG=""
 MODE=""
 
