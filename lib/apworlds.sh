@@ -11,6 +11,11 @@ unbundle_apworld() {
     local -a matches=()
 
     grep -qi '\.apworld$' <<<"$zip_listing" || return 0
+    # a world's module folder may ship .apworld files of its own (diceydungeons)
+    if grep -q '^[^/]*/__init__\.py$' <<<"$zip_listing"; then
+        debug "plain world (top-level __init__.py), not a bundle"
+        return 0
+    fi
 
     while IFS= read -r entry; do
         [[ "$entry" == */ ]] && continue

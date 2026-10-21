@@ -6,6 +6,13 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-10-21]
+
+### Fixed
+- **lib/apworlds.sh:** A world that ships an `.apworld` inside its own module folder (diceydungeons: `diceydungeons/data/build/apworlds/generic.apworld`) was taken for a bundle; that inner file was extracted and the world skipped with `extracted file is not a valid .apworld`. A zip with a top-level `NAME/__init__.py` is now always a plain world *(Claude, directed by user)*
+
+---
+
 ## [2026-10-16]
 
 ### Added
