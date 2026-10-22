@@ -27,11 +27,13 @@ Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else
    ```
 
    or start it each time with `powershell -ExecutionPolicy Bypass -File C:\Tools\update-tools\update-tools.ps1 …`.
-3. Set the folders in `%APPDATA%\update-tools\update-paths.cfg`:
+3. Set the folders in `%APPDATA%\update-tools\update-tools.cfg`, and optionally how often items are checked:
 
    ```ini
    apw_dir=C:\ProgramData\Archipelago\custom_worlds
    iso_dir=E:\
+   skip_checked=on
+   skip_hours=24
    ```
 
    A leading `~` and Windows variables like `%USERPROFILE%` are expanded. Without its key, a mode stops with a message naming it; `-Root DIR` overrides the folder for one run.
@@ -49,7 +51,7 @@ Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else
 |---|---|
 | `-m`, `-Mode MODE` | `apw` (`apworlds`), `iso` (`isos`) or `all` |
 | `-c`, `-Check` | look up and compare, then report what would be updated; downloads and writes nothing |
-| `-f`, `-Force` | check items already checked today |
+| `-f`, `-Force` | check items checked within `skip_hours` too |
 | `-r`, `-Root DIR` | use DIR instead of the mode's folder (not with `-m all`) |
 | `-d`, `-Debug` | explain each decision and time each item |
 | `-h`, `-Help` | show the help, with the folders in use |

@@ -71,7 +71,7 @@ function Save-UpdateMetadata($it) {
     $pairs = [ordered]@{}
     foreach ($key in $script:SaveKeys) {
         $value = switch ($key) {
-            'last_checked'    { $script:Today }
+            'last_checked'    { $script:CheckedAt }
             'current_version' { $it.latest_tag }
             'content_length'  { $it.remote_length }
             'last_modified'   { $it.remote_modified }
@@ -100,34 +100,64 @@ function Find-Installed($it, [string]$Dir) {
 }
 
 # ---------------------------------------------------------------------------
-# The paths file: each mode's folder, in %APPDATA%\update-tools (on other
-# systems the same folder as the bash version). Read like a cfg, never run.
+# The settings file, update-tools.cfg in %APPDATA%\update-tools (on other
+# systems the same folder as the bash version): each mode's folder, and
+# whether and for how long an item checked recently is skipped. Read like a
+# cfg, never run.
 # ---------------------------------------------------------------------------
 function Get-ConfigDir {
     if ($env:APPDATA) { return Join-Path $env:APPDATA 'update-tools' }
     $base = if ($env:XDG_CONFIG_HOME) { $env:XDG_CONFIG_HOME } else { Join-Path $HOME '.config' }
     Join-Path $base 'update-tools'
 }
-$script:PathsFile = Join-Path (Get-ConfigDir) 'update-paths.cfg'
-$script:Paths = $null
+$script:SettingsFile = Join-Path (Get-ConfigDir) 'update-tools.cfg'
+$script:Settings = $null
+# seconds an item stays "checked" after its last check; 0: never skipped
+$script:SkipSeconds = 86400
 
 # app_dir is accepted (the file may be shared with the bash version) and unused.
-function Get-Paths {
-    if ($null -ne $script:Paths) { return $script:Paths }
-    $script:Paths = @{}
-    if (Test-Path -LiteralPath $script:PathsFile -PathType Leaf) {
-        $saved = $script:Label
-        $script:Label = Split-Path -Leaf $script:PathsFile
-        $read = Read-Cfg $script:PathsFile @('app_dir', 'apw_dir', 'iso_dir')
-        $script:Label = $saved
-        foreach ($k in @($read.Keys)) {
-            $v = [Environment]::ExpandEnvironmentVariables($read[$k])
+function Get-Settings {
+    if ($null -ne $script:Settings) { return $script:Settings }
+    $script:Settings = @{}
+    if (-not (Test-Path -LiteralPath $script:SettingsFile -PathType Leaf)) { return $script:Settings }
+    $saved = $script:Label
+    $script:Label = Split-Path -Leaf $script:SettingsFile
+    $read = Read-Cfg $script:SettingsFile @('app_dir', 'apw_dir', 'iso_dir', 'skip_checked', 'skip_hours')
+    $script:Label = $saved
+    foreach ($k in @($read.Keys)) {
+        $v = $read[$k]
+        if ($k -like '*_dir') {
+            $v = [Environment]::ExpandEnvironmentVariables($v)
             if ($v -eq '~' -or $v.StartsWith('~/') -or $v.StartsWith('~\')) { $v = $HOME + $v.Substring(1) }
             elseif ($v -eq '$HOME' -or $v.StartsWith('$HOME/') -or $v.StartsWith('$HOME\')) { $v = $HOME + $v.Substring(5) }
-            $script:Paths[$k] = $v
         }
+        $script:Settings[$k] = $v
     }
-    $script:Paths
+    $file = Split-Path -Leaf $script:SettingsFile
+    $on = if ($script:Settings.skip_checked) { $script:Settings.skip_checked } else { 'on' }
+    if ($on -eq 'off') { $script:SkipSeconds = 0; return $script:Settings }
+    if ($on -ne 'on') { Say "⚠ $($file): skip_checked must be on or off (got '$on'), using on" }
+    $hours = if ($script:Settings.skip_hours) { $script:Settings.skip_hours } else { '24' }
+    if ($hours -match '^[1-9][0-9]*$') { $script:SkipSeconds = [int]$hours * 3600 }
+    else { Say "⚠ $($file): skip_hours must be a whole number of hours (got '$hours'), using 24" }
+    $script:Settings
+}
+
+# True if the item was checked less than skip_hours ago; sets checked_ago for
+# the message. last_checked is yyyy-MM-ddTHH:mm, or a date alone (saved before
+# times were added), read as that day's midnight.
+function Test-CheckedRecently($it) {
+    if (-not $script:SkipSeconds) { return $false }
+    $lc = [string]$it.last_checked
+    if ($lc -notmatch '^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$') { return $false }
+    $format = if ($lc.Length -gt 10) { "yyyy-MM-dd'T'HH:mm" } else { 'yyyy-MM-dd' }
+    $stamp = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact($lc, $format, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::AssumeLocal, [ref]$stamp)) { return $false }
+    $age = ($script:Now - $stamp).TotalSeconds
+    # a time in the future (a changed clock) counts as not checked
+    if ($age -lt 0 -or $age -ge $script:SkipSeconds) { return $false }
+    $it.checked_ago = if ($age -lt 3600) { "$([math]::Floor($age / 60)) min" } else { "$([math]::Floor($age / 3600)) h" }
+    $true
 }
 
 # A path with the home folder shown as ~, for messages.

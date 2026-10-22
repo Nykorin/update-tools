@@ -45,18 +45,22 @@ load_cfg() {
     done < "$cfg_file"
 }
 
-# Each mode's folder, from the user's paths file (read like a cfg, never
-# sourced). A missing file leaves them unset; a leading ~ or $HOME is expanded.
-PATHS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/update-tools/update-paths.cfg"
-PATH_KEYS=(app_dir apw_dir iso_dir)
-PATHS_LOADED=0
-load_paths() {
+# The user's settings file (read like a cfg, never sourced): each mode's folder
+# (a leading ~ or $HOME is expanded), and whether and for how long an item
+# checked recently is skipped. A missing file leaves the folders unset and the
+# skip at once per 24 hours.
+SETTINGS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/update-tools/update-tools.cfg"
+SETTING_KEYS=(app_dir apw_dir iso_dir skip_checked skip_hours)
+SETTINGS_LOADED=0
+# seconds an item stays "checked" after its last check; 0: never skipped
+SKIP_SECONDS=86400
+load_settings() {
     local key value
-    (( PATHS_LOADED )) && return 0
-    PATHS_LOADED=1
-    [[ -f "$PATHS_FILE" ]] || return 0
-    PROGRESS_LABEL="${PATHS_FILE##*/}" load_cfg "$PATHS_FILE" "${PATH_KEYS[@]}"
-    for key in "${PATH_KEYS[@]}"; do
+    (( SETTINGS_LOADED )) && return 0
+    SETTINGS_LOADED=1
+    [[ -f "$SETTINGS_FILE" ]] || return 0
+    PROGRESS_LABEL="${SETTINGS_FILE##*/}" load_cfg "$SETTINGS_FILE" "${SETTING_KEYS[@]}"
+    for key in app_dir apw_dir iso_dir; do
         value="${!key:-}"
         # the file's literal text, so the quotes are meant
         # shellcheck disable=SC2088,SC2016
@@ -66,6 +70,31 @@ load_paths() {
         esac
         printf -v "$key" '%s' "$value"
     done
+    case "${skip_checked:-on}" in
+        on)  ;;
+        off) SKIP_SECONDS=0; return 0 ;;
+        *)   say "⚠ ${SETTINGS_FILE##*/}: skip_checked must be on or off (got '$skip_checked'), using on" ;;
+    esac
+    if [[ "${skip_hours:-24}" =~ ^[1-9][0-9]*$ ]]; then
+        SKIP_SECONDS=$(( ${skip_hours:-24} * 3600 ))
+    else
+        say "⚠ ${SETTINGS_FILE##*/}: skip_hours must be a whole number of hours (got '$skip_hours'), using 24"
+    fi
+}
+
+# True if the item was checked less than skip_hours ago. Sets CHECKED_AGO, the
+# time since, for the message. last_checked is YYYY-MM-DDTHH:MM, or a date
+# alone (saved before times were added), read as that day's midnight.
+# shellcheck disable=SC2034  # CHECKED_AGO is read by process_item
+checked_recently() {
+    local stamp age
+    (( SKIP_SECONDS )) || return 1
+    [[ "${last_checked:-}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}(T[0-9]{2}:[0-9]{2})?$ ]] || return 1
+    stamp=$(date -d "${last_checked/T/ }" +%s 2>/dev/null) || return 1
+    age=$(( NOW - stamp ))
+    # a time in the future (a changed clock) counts as not checked
+    (( age >= 0 && age < SKIP_SECONDS )) || return 1
+    if (( age < 3600 )); then CHECKED_AGO="$(( age / 60 )) min"; else CHECKED_AGO="$(( age / 3600 )) h"; fi
 }
 
 # $1 with the home folder shown as ~, for messages.
@@ -140,7 +169,7 @@ save_update_metadata() {
     local -a pairs=()
     for key in "${SAVE_KEYS[@]}"; do
         case "$key" in
-            last_checked)    value="$today" ;;
+            last_checked)    value="$checked_at" ;;
             current_version) value="${latest_tag:-}" ;;
             content_length)  value="${remote_length:-}" ;;
             last_modified)   value="${remote_modified:-}" ;;

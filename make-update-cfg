@@ -244,7 +244,7 @@ make_cfg() {
     ITEM_TYPE="$MODE"
     item_settings
     dir="${ROOT_ARG:-$DEFAULT_DIR}"; dir="${dir%/}"
-    [[ -n "$dir" ]] || die "no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$PATHS_FILE"), or use -r DIR"
+    [[ -n "$dir" ]] || die "no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$SETTINGS_FILE"), or use -r DIR"
     [[ -d "$dir" ]] || die "$dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}"
     CFG_DIR="$dir/.cfg"
     require_cmds "$ITEM_TYPE"
@@ -253,7 +253,8 @@ make_cfg() {
     GITHUB_HEADERS=$(mktemp)
     trap 'rm -f "$GITHUB_HEADERS"' EXIT
     load_github_token
-    today=$(date +%F)
+    printf -v NOW '%(%s)T' -1
+    printf -v checked_at '%(%FT%H:%M)T' "$NOW"
 
     unset "${CFG_KEYS[@]}"
     case "$link" in

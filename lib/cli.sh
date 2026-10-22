@@ -6,13 +6,18 @@ ROOT_ARG=""
 MODE=""
 
 # The help text: -h, no arguments, and after a bad option (to stderr). The
-# folders are the ones the paths file sets.
+# folders and the skip are the ones the settings file sets.
 usage() {
-    local app apw iso
-    load_paths
+    local app apw iso skip
+    load_settings
     app=$(tilde "${app_dir:-$HOME/AppImages}"); [[ -n "${app_dir:-}" ]] || app+=" (the default)"
     apw=$(tilde "${apw_dir:-(not set)}")
     iso=$(tilde "${iso_dir:-(not set)}")
+    if (( SKIP_SECONDS )); then
+        skip="on, skip_hours=$(( SKIP_SECONDS / 3600 )): items checked in the last $(( SKIP_SECONDS / 3600 )) h are skipped"
+    else
+        skip="off: every item is checked on every run"
+    fi
     cat <<EOF
 Usage: ${0##*/} -m MODE [OPTIONS]
 Check and update AppImages, Archipelago worlds and ISOs. Each item has a cfg
@@ -28,16 +33,17 @@ Modes:
                     checksum-verified before it replaces anything
   all               all three in turn, skipping any that can't run
 
-Folders ($(tilde "$PATHS_FILE")):
+Settings ($(tilde "$SETTINGS_FILE")):
   app_dir=          $app
   apw_dir=          $apw
   iso_dir=          $iso
+  skip_checked=     $skip
 
 Options:
   -m, --mode MODE   what to update (required; see Modes)
   -c, --check       only look for updates: download and change nothing
-  -f, --force       check every item, even ones already checked today; for
-                    AppImages, also rebuild each desktop entry and its icon
+  -f, --force       check every item, even ones checked within skip_hours;
+                    for AppImages, also rebuild each desktop entry and its icon
   -r, --root DIR    use DIR instead of the mode's folder (not with -m all)
   -d, --debug       explain each decision and time each item (or DEBUG=1)
   -h, --help        show this help

@@ -34,17 +34,20 @@ ln -s "$PWD/update-tools/make-update-cfg" ~/.local/bin/make-update-cfg
 
 Both commands find their `lib/` folder through the symlink, so they can be linked from anywhere on your `PATH`.
 
-### Folders
+### Settings
 
-Each mode works in one folder, set in `~/.config/update-tools/update-paths.cfg` (or under `$XDG_CONFIG_HOME`):
+Each mode works in one folder, set in `~/.config/update-tools/update-tools.cfg` (or under `$XDG_CONFIG_HOME`), which also says how often an item is checked:
 
 ```ini
 app_dir=~/AppImages
 apw_dir=~/Games/Archipelago/custom_worlds
 iso_dir=/run/media/me/Ventoy
+# skip items checked in the last skip_hours hours (168: weekly); off: check every item every run
+skip_checked=on
+skip_hours=24
 ```
 
-The file is read as `key=value` data, never run as shell code; a leading `~` or `$HOME` is expanded. AppImages default to `~/AppImages`. Worlds and ISOs have no default: until their key is set, their mode stops with a message naming it. `-r DIR` overrides the folder for one run, and `update-tools -h` lists the folders in use.
+The file is read as `key=value` data, never run as shell code (comments go on their own lines); a leading `~` or `$HOME` is expanded. AppImages default to `~/AppImages`. Worlds and ISOs have no default: until their key is set, their mode stops with a message naming it. `-r DIR` overrides the folder for one run, and `update-tools -h` lists the folders in use.
 
 ## Usage
 
@@ -59,12 +62,12 @@ update-tools -m all          # all three in turn
 |---|---|
 | `-m`, `--mode MODE` | what to update: `app` (`appimages`), `apw` (`apworlds`), `iso` (`isos`) or `all` |
 | `-c`, `--check` | look up and compare, then report what would be updated; downloads and writes nothing |
-| `-f`, `--force` | check items already checked today; for AppImages, also rebuild each desktop entry and icon |
+| `-f`, `--force` | check items checked within `skip_hours` too; for AppImages, also rebuild each desktop entry and icon |
 | `-r`, `--root DIR` | use DIR instead of the mode's folder (not with `-m all`) |
 | `-d`, `--debug` | explain each decision and time each item (or `DEBUG=1`) |
 | `-h`, `--help` | show the help |
 
-Each item is checked at most once a day unless `-f` is given. On a terminal the output is a live two-line status block with an overall progress bar; redirected output is plain text without escape codes. When GitHub requests were made, the last line shows how many of the hourly request budget are left.
+Each item is checked at most once per `skip_hours` (24 by default) unless `-f` is given or `skip_checked=off`. On a terminal the output is a live two-line status block with an overall progress bar; redirected output is plain text without escape codes. When GitHub requests were made, the last line shows how many of the hourly request budget are left.
 
 ## Adding an item
 

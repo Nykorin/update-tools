@@ -46,9 +46,10 @@ function Invoke-Item([string]$CfgFile, [int]$Index, [int]$Count) {
     if ($it.installed_path) { Debug-Line "installed file: $(Split-Path -Leaf $it.installed_path)" }
     else { Debug-Line 'not installed yet: installing it' }
 
-    if (-not $script:ForceAll -and $it.installed_path -and $it.last_checked -eq $script:Today) {
+    # skip_checked and skip_hours in the settings file: once per 24 hours by default
+    if (-not $script:ForceAll -and $it.installed_path -and (Test-CheckedRecently $it)) {
         $shown = if ($it.current_version) { $it.current_version } else { $it.installed_file }
-        Status-Final "✓ already checked today ($shown)"
+        Status-Final "✓ already checked $($it.checked_ago) ago ($shown)"
         return 0
     }
 
@@ -140,9 +141,9 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
     $s = Get-ModeSettings $Type
     $script:Type = $Type; $script:Ext = $s.Ext
     $rootHint = if ($All) { '' } else { " $($s.RootHint)" }
-    $dir = if ($Root) { $Root } else { (Get-Paths)[$s.DirKey] }
+    $dir = if ($Root) { $Root } else { (Get-Settings)[$s.DirKey] }
     if (-not $dir) {
-        Write-Err "ERROR: no folder set for $($s.Title): add $($s.DirKey)=DIR to $(Format-Path $script:PathsFile).$rootHint"
+        Write-Err "ERROR: no folder set for $($s.Title): add $($s.DirKey)=DIR to $(Format-Path $script:SettingsFile).$rootHint"
         return $false
     }
     $dir = $dir.TrimEnd('/', '\')

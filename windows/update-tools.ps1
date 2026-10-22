@@ -21,9 +21,11 @@ foreach ($lib in 'output', 'cfg', 'net', 'managers', 'files', 'apworlds', 'isos'
 }
 
 function Show-Usage([switch]$ToError) {
-    $paths = Get-Paths
-    $apw = if ($paths.apw_dir) { Format-Path $paths.apw_dir } else { '(not set)' }
-    $iso = if ($paths.iso_dir) { Format-Path $paths.iso_dir } else { '(not set)' }
+    $settings = Get-Settings
+    $apw = if ($settings.apw_dir) { Format-Path $settings.apw_dir } else { '(not set)' }
+    $iso = if ($settings.iso_dir) { Format-Path $settings.iso_dir } else { '(not set)' }
+    $h = $script:SkipSeconds / 3600
+    $skip = if ($script:SkipSeconds) { "on, skip_hours=${h}: items checked in the last $h h are skipped" } else { 'off: every item is checked on every run' }
     $text = @"
 Usage: update-tools.ps1 -m MODE [OPTIONS]
 Check and update Archipelago worlds and ISOs. Each item has a cfg
@@ -37,14 +39,15 @@ Modes:
                     before it replaces anything
   all               both in turn, skipping any that can't run
 
-Folders ($(Format-Path $script:PathsFile)):
+Settings ($(Format-Path $script:SettingsFile)):
   apw_dir=          $apw
   iso_dir=          $iso
+  skip_checked=     $skip
 
 Options:
   -m, -Mode MODE    what to update (required; see Modes)
   -c, -Check        only look for updates: download and change nothing
-  -f, -Force        check every item, even ones already checked today
+  -f, -Force        check every item, even ones checked within skip_hours
   -r, -Root DIR     use DIR instead of the mode's folder (not with -m all)
   -d, -Debug        explain each decision and time each item
   -h, -Help         show this help
@@ -65,10 +68,13 @@ if ($Mode -eq 'all' -and $Root) {
     exit 2
 }
 
+[void](Get-Settings)   # the skip applies with -Root too
 $script:CheckOnly = [bool]$Check
 $script:ForceAll = [bool]$Force
 $script:DebugOn = [bool]$Debug -or ($env:DEBUG -and $env:DEBUG -ne '0')
-$script:Today = (Get-Date).ToString('yyyy-MM-dd')
+# one time for the whole run: what last_checked saves, and what it's compared with
+$script:Now = Get-Date
+$script:CheckedAt = $script:Now.ToString("yyyy-MM-dd'T'HH:mm")
 
 $skipped = @()
 foreach ($m in $modes) {

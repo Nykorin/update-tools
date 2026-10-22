@@ -14,7 +14,7 @@
 # advice, left out under -m all, which refuses -r).
 # shellcheck disable=SC2034  # used by the modules and the shared libraries
 item_settings() {
-    load_paths
+    load_settings
     case "$ITEM_TYPE" in
         app)
             ITEM_TITLE="AppImages"
@@ -117,7 +117,7 @@ item_extras()        { :; }   # after installing (AppImages: desktop entry; ISOs
 # with the module's hooks where they differ. Returns 2 to stop the whole run.
 process_item() {
     local i="$1"
-    local rc new_file new_name candidate target
+    local rc new_file new_name candidate target CHECKED_AGO
     (( ${#ITEM_LOCALS[@]} )) && local "${ITEM_LOCALS[@]}"
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
@@ -139,8 +139,9 @@ process_item() {
         debug "not installed yet: installing it"
     fi
 
-    if [[ "$force" == false && -n "$installed_path" && "${last_checked:-}" == "$today" ]]; then
-        status_final "✓ already checked today (${current_version:-$installed_file})"
+    # skip_checked and skip_hours in the settings file: once per 24 hours by default
+    if [[ "$force" == false && -n "$installed_path" ]] && checked_recently; then
+        status_final "✓ already checked $CHECKED_AGO ago (${current_version:-$installed_file})"
         case "$ITEM_TYPE" in
             app) [[ "$check_only" == true ]] || ensure_desktop_entry "$name" "$installed_path" ;;
         esac
@@ -265,7 +266,7 @@ run_mode() {
     dir="${dir%/}"
     if [[ -z "$dir" ]]; then
         [[ "$MODE" == all ]] && ROOT_HINT=""
-        echo "ERROR: no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$PATHS_FILE").${ROOT_HINT:+ $ROOT_HINT}" >&2
+        echo "ERROR: no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$SETTINGS_FILE").${ROOT_HINT:+ $ROOT_HINT}" >&2
         exit 1
     fi
     if [[ ! -d "$dir" ]]; then
@@ -299,7 +300,7 @@ run_mode() {
 
 # The command. No arguments prints the help; -m all runs every mode in turn,
 # carries on past one that can't run, and exits 1 at the end if any didn't.
-# shellcheck disable=SC2034  # force, check_only and today are read by the modes
+# shellcheck disable=SC2034  # force, check_only, NOW and checked_at are read by the modes
 update_tools() {
     if (( $# == 0 )); then
         usage
@@ -314,7 +315,9 @@ update_tools() {
         echo "${0##*/}: -r can't be used with -m all (each mode has its own folder)" >&2
         exit 2
     fi
-    today=$(date +%F)
+    # one time for the whole run: what last_checked saves, and what it's compared with
+    printf -v NOW '%(%s)T' -1
+    printf -v checked_at '%(%FT%H:%M)T' "$NOW"
 
     local -a modes skipped=()
     local m
