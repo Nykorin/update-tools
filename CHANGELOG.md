@@ -9,6 +9,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-22]
 
 ### Added
+- **.gitignore:** `CLAUDE.md` stays local: it was removed from every commit before the repo was published (the two commits that changed only it are gone), and is ignored from now on *(Claude, directed by user)*
 - **LICENSE:** The MIT License, copyright Nykorin *(Claude, directed by user)*
 - **windows/make-update-cfg.ps1:** The PowerShell port of `make-update-cfg`, for worlds and ISOs: the same link handling (GitHub and GitLab releases with a version-free pattern or `repo_regex`, static links with the version warning, checksum files found next to an ISO), the same check before writing, and byte-identical cfgs to the bash version for the same links; it leaves out Linux, Mac and ARM builds instead of Windows ones. `-Debug` stays usable because the script declares no `[Parameter()]` attributes *(Claude, directed by user)*
 - **lib/cfg.sh, lib/main.sh, lib/cli.sh, windows/lib/cfg.ps1, windows/lib/main.ps1, windows/update-tools.ps1:** `skip_checked=on|off` and `skip_hours` in the settings file: an item checked less than `skip_hours` ago (24 by default, so 168 is weekly) is skipped with `✓ already checked N h ago (…)`, and `off` checks every item on every run. Invalid values are reported and the defaults used; `-f` still skips nothing. The help shows the setting in use *(Claude, directed by user)*
