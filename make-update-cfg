@@ -106,17 +106,45 @@ choose_asset() {
     asset="${names[0]}"
 }
 
-# The asset's name as a glob, its version (the tag, with or without its v)
-# replaced by *, so the next release still matches.
-asset_glob() {
-    local t
+# A string as a regex that matches it literally.
+regex_escape() {
+    local s="$1" out="" ch i
+    for (( i = 0; i < ${#s}; i++ )); do
+        ch="${s:i:1}"
+        case "$ch" in
+            '.'|'^'|'$'|'*'|'+'|'?'|'('|')'|'['|']'|'{'|'}'|'|'|"\\") out+="\\$ch" ;;
+            *) out+="$ch" ;;
+        esac
+    done
+    printf '%s' "$out"
+}
+
+# Sets repo_filename to the asset's name with its version (the tag, with or
+# without its v) replaced by *, so the next release still matches. When that
+# glob also matches another asset of the release (Obsidian-*.AppImage takes
+# Obsidian-1.14.4-arm64.AppImage too), sets repo_regex instead, with a version
+# that can't hold a "-". $1 = the jq path to a release's asset names.
+asset_pattern() {
+    local t ver="" names re
+    names=$(jq -r --arg t "$tag" ".[] | select(.tag_name == \$t) | $1" <<<"$release_json" 2>/dev/null)
     for t in "$tag" "${tag#[vV]}"; do
         if [[ "$t" =~ [0-9] && "$asset" == *"$t"* ]]; then
-            printf '%s' "${asset//"$t"/*}"
-            return
+            ver="$t"
+            break
         fi
     done
-    printf '%s' "$asset"
+    if [[ -z "$ver" ]]; then
+        repo_filename="$asset"
+        return
+    fi
+    repo_filename="${asset//"$ver"/*}"
+    (( $(grep -cE "$(glob_to_regex "$repo_filename")" <<<"$names") > 1 )) || return 0
+    debug "$repo_filename also matches other assets; using a regex"
+    re=$(regex_escape "$asset")
+    re="${re//"$(regex_escape "$ver")"/$(regex_escape "${ver%%[0-9]*}")[0-9][0-9A-Za-z.+~]*}"
+    if (( $(grep -cE "^($re)\$" <<<"$names") == 1 )); then
+        repo_filename="" repo_regex="$re"
+    fi
 }
 
 from_github() {
@@ -130,7 +158,8 @@ from_github() {
     # the same URL resolve_latest_asset asks for, so its check comes from the cache
     github_releases "$api_url" || exit 1
     choose_asset "$release_json" '.assets[].name'
-    manager=github repo_filename=$(asset_glob)
+    manager=github
+    asset_pattern '.assets[].name'
     default_name=$(clean_name "${repo#*/}")
 }
 
@@ -142,7 +171,8 @@ from_gitlab() {
     # an asset's link ends in /download, so find its name in the list
     wanted=$(jq -r --arg u "$link" '[.[].assets.links[]? | select(.url == $u or .direct_asset_url == $u) | .name][0] // empty' <<<"$release_json" 2>/dev/null)
     choose_asset "$release_json" '(.assets.links // [])[].name'
-    manager=gitlab repo_url="https://gitlab.com/$project" repo_filename=$(asset_glob)
+    manager=gitlab repo_url="https://gitlab.com/$project"
+    asset_pattern '(.assets.links // [])[].name'
     default_name=$(clean_name "${project##*/}")
 }
 
@@ -240,7 +270,9 @@ make_cfg() {
     # what update-tools will find, with the cfg as written
     resolve_latest_asset || exit 1
     debug "resolves to ${latest_tag:-?}: $asset_name"
-    [[ -n "${asset:-}" && "$asset_name" != "$asset" ]] && say "⚠ $name: the cfg finds $asset_name, not $asset"
+    if [[ -n "${asset:-}" && "$asset_name" != "$asset" ]]; then
+        die "the cfg would find $asset_name, not $asset; nothing written"
+    fi
 
     if [[ "$ITEM_TYPE" == iso ]]; then
         find_checksum
@@ -250,10 +282,12 @@ make_cfg() {
     fi
     pairs+=("manager=$manager")
     case "$manager" in
-        github) pairs+=("repo=$repo" "repo_filename=$repo_filename") ;;
-        gitlab) pairs+=("repo_url=$repo_url" "repo_filename=$repo_filename") ;;
+        github) pairs+=("repo=$repo") ;;
+        gitlab) pairs+=("repo_url=$repo_url") ;;
         static) pairs+=("url=$url") ;;
     esac
+    [[ -n "${repo_filename:-}" ]] && pairs+=("repo_filename=$repo_filename")
+    [[ -n "${repo_regex:-}" ]] && pairs+=("repo_regex=$repo_regex")
     [[ -n "${checksum:-}" ]] && pairs+=("checksum=$checksum")
 
     # several worlds may share a repo, so this is only a warning
