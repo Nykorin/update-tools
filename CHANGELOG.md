@@ -8,6 +8,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ## [2026-10-21]
 
+### Changed
+- **CLAUDE.md:** Trimmed by about 14% (37.3k to 32.0k characters). Removed what the code already shows (the per-file list of `lib/`, the dependency list, the step-by-step copy of `process_item`, `item_settings`' variable list) and rules repeated in several sections (a missing file means install, `curl -f`, same-disk staging, saving only after success, `-r` for ISOs), each now stated once. Fixed stale lines: the ISO `manager` key accepts any manager, `-f` rebuilds an up-to-date AppImage's desktop entry, "already checked today" only creates a missing entry, and "update-isos" now reads `-m iso`. "Known open items" drops the fixed static bug and the stale-docs item; the rest are renumbered 1–5 *(Claude, directed by user)*
+
 ### Fixed
 - **lib/apworlds.sh:** A world that ships an `.apworld` inside its own module folder (diceydungeons: `diceydungeons/data/build/apworlds/generic.apworld`) was taken for a bundle; that inner file was extracted and the world skipped with `extracted file is not a valid .apworld`. A zip with a top-level `NAME/__init__.py` is now always a plain world *(Claude, directed by user)*
 
