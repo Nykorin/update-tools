@@ -8,11 +8,14 @@ $script:Total = 0
 $script:Title = ''
 $script:Plain = [Console]::IsOutputRedirected
 $script:DebugOn = $false
+# set while make-update-cfg tries lookups that are allowed to fail
+$script:Quiet = $false
 
 # A permanent line, for warnings, errors and results. It never goes into a
 # function's output, so it can't end up in a variable by accident. On a
 # console it goes through the host, which clears the progress bar first.
 function Say([string]$Text) {
+    if ($script:Quiet) { return }
     if ($script:Plain) { [Console]::Out.WriteLine($Text) } else { Write-Host $Text }
 }
 
