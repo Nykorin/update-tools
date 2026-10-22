@@ -9,6 +9,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-22]
 
 ### Added
+- **README.md (portable-home branch):** What the experiment was, how its last version works (per-app folders, a shared home of symlinked desktop settings, wrappers that mount each app's home with fuse-overlayfs), what it needs, and the AI notice *(Claude, directed by user)*
 - **README.md:** A notice near the top that the code and documentation were written mostly by AI (Claude and Grok) under the author's direction, tested only on the author's system and not reviewed by anyone else, with advice to read the scripts, start with `-c` and keep backups *(Claude, directed by user)*
 - **README.md:** What the tool does, requirements, installation, usage, adding items with `make-update-cfg` or by hand (every manager and its keys, with an example cfg for each mode), the GitHub token, how installs stay safe, and the code layout *(Claude, directed by user)*
 - **lib/cfg.sh, lib/main.sh, make-update-cfg:** Each mode's folder comes from `~/.config/update-tools/update-paths.cfg` (`$XDG_CONFIG_HOME` if set): `app_dir`, `apw_dir` and `iso_dir`, read like a cfg (never sourced; unknown keys are reported) by the new `load_paths`, with a leading `~` or `$HOME` expanded. AppImages fall back to `~/AppImages`; worlds and ISOs have no default, and their mode stops with `no folder set for …: add KEY=DIR to …` until the key is set or `-r` is given *(Claude, directed by user)*
