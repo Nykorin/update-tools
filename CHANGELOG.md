@@ -17,6 +17,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **lib/cli.sh:** The help text lists the folders the paths file sets (or `(not set)`) instead of fixed paths, and no longer names a `_ISO` folder, which came from a Ventoy theme, not Ventoy itself *(Claude, directed by user)*
 - **lib/cfg.sh:** `load_cfg FILE [KEY…]` takes the keys a file may set (default: `CFG_KEYS`) *(Claude, directed by user)*
 - **README.md, CLAUDE.md:** The paths file instead of the author's folders; no `_ISO` folder in the examples *(Claude, directed by user)*
+- **git history:** The `portable-home` branch in the order its versions were made: the shared-home variant, the portable homes with a separate `wrapper-script.appimage.sh`, then the version that mounts the shared home with fuse-overlayfs and builds the wrapper in. Its 2026-10-04 entries here follow the same order *(Claude, directed by user)*
 
 ### Removed
 - **lib/main.sh, lib/cli.sh:** The author's folders (`/mnt/games_rando/Archipelago/custom_worlds`, `/mnt/ventoy/_ISO`) as built-in defaults *(Claude, directed by user)*
@@ -307,9 +308,15 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-04]
 
 ### Added
-- **update-appimages.sh:** Experiment: one shared home for all apps (`.shared-home` mounted with fuse-overlayfs, symlinked theming), with generated wrapper scripts; dropped the same day *(Grok, per user direction)*
-- **update-appimages.sh:** Experiment: shared-home and portable-home variant; dropped the same day *(Grok, per user direction)*
+- **update-appimages.sh:** Experiment: a shared home for all apps (`.shared-home`, symlinked theming) alongside per-app portable homes; dropped the same day *(Grok, per user direction)*
 - **update-appimages.sh, wrapper-script.appimage.sh:** Experiment: always-on portable homes through an `appname.appimage.sh` wrapper that sets `HOME` and the XDG folders; dropped the same day *(Grok, per user direction)*
+- **update-appimages.sh:** Experiment: one shared home for all apps, mounted with fuse-overlayfs (a new dependency), with symlinked theming; dropped the same day *(Grok, per user direction)*
+
+### Changed
+- **update-appimages.sh:** Generates each app's wrapper script itself (`generate_wrapper`) *(Grok, per user direction)*
+
+### Removed
+- **wrapper-script.appimage.sh:** Built into update-appimages.sh *(Grok, per user direction)*
 
 ---
 
