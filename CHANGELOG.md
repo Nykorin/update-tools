@@ -6,6 +6,13 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-10-22]
+
+### Added
+- **README.md:** What the tool does, requirements, installation, usage, adding items with `make-update-cfg` or by hand (every manager and its keys, with an example cfg for each mode), the GitHub token, how installs stay safe, and the code layout *(Claude, directed by user)*
+
+---
+
 ## [2026-10-21]
 
 ### Added
