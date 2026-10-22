@@ -171,3 +171,7 @@ windows/            the PowerShell port for worlds and ISOs
 ## Credits
 
 Design and direction by Nykorin. The scripts were written with Claude (Anthropic), with modularization and later refactoring by Grok (xAI).
+
+## License
+
+MIT, see [LICENSE](LICENSE).

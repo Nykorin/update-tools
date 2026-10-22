@@ -68,3 +68,7 @@ Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else
 A GitHub token goes in `$env:GITHUB_TOKEN` or on the first line of `%APPDATA%\update-tools\github_token`. It's only ever sent to api.github.com.
 
 Emoji in the output need a console that shows them, such as Windows Terminal.
+
+## License
+
+MIT, see [LICENSE](../LICENSE).
