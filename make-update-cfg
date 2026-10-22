@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+# make-update-cfg: writes a new item's cfg from a link, for update-tools to
+# install on its next run. Run without arguments for the help.
+set -uo pipefail
+shopt -s extglob
+
+# the script's real folder, through any symlink, so lib/ is found next to it
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=lib/load.sh
+source "$SCRIPT_DIR/lib/load.sh" || exit 1
+
+# replaces update-tools' help, which set_mode prints after a bad type
+usage() {
+    cat <<EOF
+Usage: ${0##*/} [OPTIONS] TYPE LINK [NAME]
+Write a cfg for a new AppImage, Archipelago world or ISO, read from LINK. The
+next update-tools run installs it.
+
+TYPE: app (appimages), apw (apworlds) or iso (isos).
+LINK: a GitHub or GitLab project, or one of its release assets (to choose
+      between several); any other URL is a fixed download (static).
+NAME: the cfg's name (default: from the repo or the file name).
+
+Options:
+  -r, --root DIR    the item folder (default: the mode's, as in update-tools)
+  -d, --debug       explain each decision (or DEBUG=1)
+  -h, --help        show this help
+EOF
+}
+
+die() { echo "${0##*/}: $*" >&2; exit 1; }
+
+# A cfg name from a file or repo name: no extension, arch or version, lowercase,
+# and _ for anything but letters, digits, - and _.
+clean_name() {
+    local n="$1"
+    n="${n%.@(AppImage|appimage|apworld|iso|zip|tar.*)}"
+    n="${n//@([-_.])@(x86[-_]64|amd64|x64)/}"
+    n="${n%%[-_]?(v)[0-9]*}"
+    n="${n,,}"
+    printf '%s' "${n//[^a-z0-9_-]/_}"
+}
+
+# Asset names a TYPE can install: the type's own file first, else an archive
+# holding one.
+asset_patterns() {
+    case "$ITEM_TYPE" in
+        app) printf '%s\n' '\.appimage$' '\.(zip|tar\.[a-z0-9]+)$' ;;
+        apw) printf '%s\n' '\.apworld$' '\.zip$' ;;
+        iso) printf '%s\n' '\.iso$' ;;
+    esac
+}
+
+# "TAG<tab>NAME<tab>NAME…" for the newest release with an asset matching $2:
+# stable first, like allow_prereleases=auto. $1 = the release list, $3 = the
+# jq path to a release's asset names (GitHub and GitLab differ).
+release_assets() {
+    jq -r --arg pat "$2" "
+        if type != \"array\" then empty else
+            [ .[] | select((.draft // false) | not)
+              | { tag: .tag_name, pre: (.prerelease // false),
+                  names: [ $3 | select(test(\$pat; \"i\")) ] }
+              | select(.names | length > 0) ]
+            | (map(select(.pre | not))[0] // .[0]) // empty
+            | [.tag] + .names | @tsv
+        end" <<<"$1" 2>/dev/null
+}
+
+# Sets tag and asset from release list $1 ($2 = the jq path to asset names):
+# the asset LINK names (or $wanted, set by the caller), else the only candidate.
+# Several candidates without a choice end the script with the list.
+choose_asset() {
+    local pat found
+    local -a names keep
+    while read -r pat; do
+        found=$(release_assets "$1" "$pat" "$2")
+        [[ -n "$found" ]] && break
+    done < <(asset_patterns)
+    [[ -n "$found" ]] || die "no release has a .$ITEM_EXT asset (or an archive) to install"
+    IFS=$'\t' read -ra names <<<"$found"
+    tag="${names[0]}"; names=("${names[@]:1}")
+    debug "release $tag has ${#names[@]} candidate(s): ${names[*]}"
+
+    if [[ -z "${wanted:-}" ]]; then
+        wanted="${link%%\?*}"; wanted="${wanted##*/}"
+    fi
+    for asset in "${names[@]}"; do
+        [[ "$asset" == "$wanted" ]] && { debug "the link names $asset"; return 0; }
+    done
+    # builds for other systems or architectures can't run here
+    keep=()
+    for asset in "${names[@]}"; do
+        [[ "${asset,,}" =~ (aarch64|arm64|armhf|armv7|(^|[-_.])(win(dows)?(32|64)?|mac(os)?|osx|darwin)([-_.]|$)) ]] || keep+=("$asset")
+    done
+    if (( ${#keep[@]} == 0 )); then
+        printf '%s: release %s has only builds for other systems:\n' "${0##*/}" "$tag" >&2
+        printf '  %s\n' "${names[@]}" >&2
+        exit 1
+    fi
+    names=("${keep[@]}")
+    if (( ${#names[@]} > 1 )); then
+        printf '%s: release %s has several assets; pass the link of the one you want:\n' "${0##*/}" "$tag" >&2
+        printf '  %s\n' "${names[@]}" >&2
+        exit 1
+    fi
+    asset="${names[0]}"
+}
+
+# The asset's name as a glob, its version (the tag, with or without its v)
+# replaced by *, so the next release still matches.
+asset_glob() {
+    local t
+    for t in "$tag" "${tag#[vV]}"; do
+        if [[ "$t" =~ [0-9] && "$asset" == *"$t"* ]]; then
+            printf '%s' "${asset//"$t"/*}"
+            return
+        fi
+    done
+    printf '%s' "$asset"
+}
+
+from_github() {
+    local api_url
+    repo="${link#*github.com/}"
+    IFS=/ read -r owner project _ <<<"$repo"
+    [[ -n "$owner" && -n "$project" ]] || die "no owner/repo in $link"
+    repo="$owner/${project%.git}"
+    PROGRESS_LABEL="$repo"
+    api_url="https://api.github.com/repos/${repo}/releases?per_page=100"
+    # the same URL resolve_latest_asset asks for, so its check comes from the cache
+    github_releases "$api_url" || exit 1
+    choose_asset "$release_json" '.assets[].name'
+    manager=github repo_filename=$(asset_glob)
+    default_name=$(clean_name "${repo#*/}")
+}
+
+from_gitlab() {
+    local project="${link#*gitlab.com/}"
+    project="${project%%/-/*}"; project="${project%/}"; project="${project%.git}"
+    PROGRESS_LABEL="$project"
+    gitlab_releases "$project" || exit 1
+    # an asset's link ends in /download, so find its name in the list
+    wanted=$(jq -r --arg u "$link" '[.[].assets.links[]? | select(.url == $u or .direct_asset_url == $u) | .name][0] // empty' <<<"$release_json" 2>/dev/null)
+    choose_asset "$release_json" '(.assets.links // [])[].name'
+    manager=gitlab repo_url="https://gitlab.com/$project" repo_filename=$(asset_glob)
+    default_name=$(clean_name "${project##*/}")
+}
+
+from_static() {
+    local given="${link%%\?*}"
+    given="${given##*/}"
+    PROGRESS_LABEL="$given"
+    static_head "$link" || exit 1
+    debug "the link lands on $asset_name"
+    if ! grep -qiE "$(asset_patterns | paste -sd'|')" <<<"$asset_name"; then
+        say "⚠ $asset_name doesn't look like a .$ITEM_EXT file; check that the link is the download itself"
+    fi
+    # a version in the link itself means it never points at a newer release
+    if [[ "$given" =~ [0-9]+\.[0-9]+|[0-9]{6,} ]]; then
+        say "⚠ $given names one release: a static cfg only sees that file change. For newer releases, use a link without the version, or manager=dirlist with * in place of it"
+    fi
+    manager=static url="$link"
+    default_name=$(clean_name "$asset_name")
+}
+
+# Sets checksum to the first checksum file next to the ISO that lists it, tried
+# through the ISO module's own lookup. Empty when none does. The link's own name
+# covers a redirect (Garuda: latest.iso.sha256); the glob, which needs a
+# server listing, goes last (Fedora's Fedora-KDE-…-CHECKSUM).
+find_checksum() {
+    local c given="${url:-}"
+    given="${given%%\?*}"; given="${given##*/}"
+    for c in '{iso}.sha256' '{iso}.sha256sum' '{iso}.sha512' '{iso}.sha512sum' \
+             '{iso}-CHECKSUM' '{iso}.CHECKSUM' ${given:+"$given.sha256"} \
+             SHA256SUMS SHA256SUMS.txt SHA512SUMS sha256sums.txt sha512sums.txt \
+             sha256sum.txt CHECKSUM CHECKSUMS CHECKSUMS.txt '*CHECKSUM*'; do
+        checksum="$c"
+        if item_prepare_check >/dev/null 2>&1; then
+            debug "checksum file: $sum_url"
+            return 0
+        fi
+    done
+    checksum=""
+}
+
+make_cfg() {
+    local -a args=() pairs=()
+    local link name default_name cfg owner project tag asset wanted="" other
+    local ROOT_ARG=""
+    while (( $# )); do
+        case "$1" in
+            -r|--root)
+                [[ -n "${2:-}" ]] || { echo "${0##*/}: $1 needs a folder" >&2; usage >&2; exit 2; }
+                ROOT_ARG="$2"; shift ;;
+            --root=*)
+                ROOT_ARG="${1#--root=}"
+                [[ -n "$ROOT_ARG" ]] || { echo "${0##*/}: --root needs a folder" >&2; usage >&2; exit 2; } ;;
+            -d|--debug) DEBUG=1 ;;
+            -h|--help)  usage; exit 0 ;;
+            -*)         echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+            *)          args+=("$1") ;;
+        esac
+        shift
+    done
+    if (( ${#args[@]} < 2 || ${#args[@]} > 3 )); then
+        (( ${#args[@]} )) || { usage; exit 0; }
+        echo "${0##*/}: need TYPE and LINK" >&2; usage >&2; exit 2
+    fi
+    set_mode "${args[0]}"
+    [[ "$MODE" == all ]] && { echo "${0##*/}: TYPE is app, apw or iso" >&2; usage >&2; exit 2; }
+    link="${args[1]}"
+    [[ "$link" == *://* ]] || link="https://$link"
+
+    ITEM_TYPE="$MODE"
+    item_settings
+    dir="${ROOT_ARG:-$DEFAULT_DIR}"; dir="${dir%/}"
+    [[ -d "$dir" ]] || die "$dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}"
+    CFG_DIR="$dir/.cfg"
+    require_cmds "$ITEM_TYPE"
+    command -v jq &>/dev/null || die "required command not found: jq"
+    [[ "$ITEM_TYPE" == iso ]] && load_module
+    GITHUB_HEADERS=$(mktemp)
+    trap 'rm -f "$GITHUB_HEADERS"' EXIT
+    load_github_token
+    today=$(date +%F)
+
+    unset "${CFG_KEYS[@]}"
+    case "$link" in
+        *://github.com/*|*://www.github.com/*) from_github ;;
+        *://gitlab.com/*)                      from_gitlab ;;
+        *)                                     from_static ;;
+    esac
+
+    name="${args[2]:-$default_name}"
+    [[ -n "$name" && "$name" != */* ]] || die "can't make a cfg name from the link; pass NAME"
+    cfg="$CFG_DIR/$name.$ITEM_EXT.cfg"
+    [[ -e "$cfg" ]] && die "${cfg/#"$HOME"/\~} already exists"
+    PROGRESS_LABEL="$name"
+
+    # what update-tools will find, with the cfg as written
+    resolve_latest_asset || exit 1
+    debug "resolves to ${latest_tag:-?}: $asset_name"
+    [[ -n "${asset:-}" && "$asset_name" != "$asset" ]] && say "⚠ $name: the cfg finds $asset_name, not $asset"
+
+    if [[ "$ITEM_TYPE" == iso ]]; then
+        find_checksum
+        [[ -n "$checksum" ]] || say "⚠ $name: no checksum file found next to the ISO; add checksum= by hand (required)"
+        folder="$name"
+        pairs+=("folder=$folder")
+    fi
+    pairs+=("manager=$manager")
+    case "$manager" in
+        github) pairs+=("repo=$repo" "repo_filename=$repo_filename") ;;
+        gitlab) pairs+=("repo_url=$repo_url" "repo_filename=$repo_filename") ;;
+        static) pairs+=("url=$url") ;;
+    esac
+    [[ -n "${checksum:-}" ]] && pairs+=("checksum=$checksum")
+
+    # several worlds may share a repo, so this is only a warning
+    for other in "$CFG_DIR"/*."$ITEM_EXT".cfg; do
+        [[ -f "$other" ]] || continue
+        if grep -qxF -e "repo=${repo:-}" -e "repo_url=${repo_url:-}" -e "url=${url:-}" "$other"; then
+            say "⚠ $name: ${other##*/} already uses this ${repo:+repo}${repo_url:+repo}${url:+URL}"
+        fi
+    done
+
+    mkdir -p "$CFG_DIR"
+    printf '# %s\n' "$link" > "$cfg"
+    update_cfg "$cfg" "${pairs[@]}"
+    say "✓ wrote ${cfg/#"$HOME"/\~} (${tag:+$tag: }$asset_name):"
+    sed 's/^/    /' "$cfg"
+    [[ "$ITEM_TYPE" == iso ]] && say "  folder=$folder is a guess: set it to the ISO's folder under ${dir/#"$HOME"/\~}"
+    say "  update-tools -m $ITEM_TYPE -c shows the install; a run without -c does it"
+}
+
+make_cfg "$@"

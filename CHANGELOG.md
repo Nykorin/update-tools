@@ -8,6 +8,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ## [2026-10-21]
 
+### Added
+- **make-update-cfg:** A new command that writes a new item's cfg from a link: `make-update-cfg TYPE LINK [NAME]` (TYPE as in `-m`: `app`, `apw` or `iso`; `-r DIR`, `-d`). A GitHub or GitLab project becomes a `github`/`gitlab` cfg: the newest release (stable first) with an installable asset (`.AppImage`, `.apworld`, `.iso`, else a `.zip`/`.tar.*`), builds for other systems and architectures left out, and the version in its name replaced by `*`; several candidates are listed, and the link of one release asset picks it. Any other link becomes a `static` cfg, with a warning when the link itself names a version. ISOs get the first checksum file next to them that lists the ISO, and `folder=NAME` to be set by hand. The cfg is checked with the same lookup update-tools uses before it's written; an existing cfg is never overwritten, and one already using the repo or URL is named *(Claude, directed by user)*
+
 ### Changed
 - **CLAUDE.md:** Trimmed by about 14% (37.3k to 32.0k characters). Removed what the code already shows (the per-file list of `lib/`, the dependency list, the step-by-step copy of `process_item`, `item_settings`' variable list) and rules repeated in several sections (a missing file means install, `curl -f`, same-disk staging, saving only after success, `-r` for ISOs), each now stated once. Fixed stale lines: the ISO `manager` key accepts any manager, `-f` rebuilds an up-to-date AppImage's desktop entry, "already checked today" only creates a missing entry, and "update-isos" now reads `-m iso`. "Known open items" drops the fixed static bug and the stale-docs item; the rest are renumbered 1–5 *(Claude, directed by user)*
 
