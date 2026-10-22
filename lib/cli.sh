@@ -54,7 +54,12 @@ parse_flags() {
                     echo "${0##*/}: $1 needs a folder" >&2; usage >&2; exit 2
                 fi
                 ROOT_ARG="$2"; shift ;;
-            --root=*)   ROOT_ARG="${1#--root=}" ;;
+            --root=*)
+                # empty would quietly fall back to the mode's real folder
+                if [[ -z "${1#--root=}" ]]; then
+                    echo "${0##*/}: --root needs a folder" >&2; usage >&2; exit 2
+                fi
+                ROOT_ARG="${1#--root=}" ;;
             -d|--debug) DEBUG=1 ;;
             -h|--help)  usage; exit 0 ;;
             *)          echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
