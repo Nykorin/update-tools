@@ -21,6 +21,8 @@ load_cfg() {
     unset "${CFG_KEYS[@]}"
 
     while IFS= read -r line || [[ -n "$line" ]]; do
+        # a cfg saved with Windows line endings: the \r would end every value
+        line="${line%$'\r'}"
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
         if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
