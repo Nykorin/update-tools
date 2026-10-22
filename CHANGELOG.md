@@ -9,12 +9,15 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-10-22]
 
 ### Added
+- **windows/:** A PowerShell port of the worlds and ISO modes for Windows (`windows/update-tools.ps1`, with `windows/lib/` laid out like `lib/`): the same cfg files and keys, managers (github, gitlab, static, dirlist, dateprobe), rules and messages as the bash version, with no tools beyond Windows PowerShell 5.1 or PowerShell 7. Folders and the GitHub token live in `%APPDATA%\update-tools\`; redirects are followed by hand so the token only goes to api.github.com, and `file://` URLs work as with curl. Tested with PowerShell 7.6 on Linux: the same worlds and ISOs (bundles, checksums, renamed updates, a 304, Ctrl+C mid-download, recovery after a kill) give byte-identical files and cfgs to the bash version; not yet run on Windows or in PowerShell 5.1 *(Claude, directed by user)*
+- **windows/README.md:** Setup on Windows (execution policy, the paths file), usage and options, and the AI notice *(Claude, directed by user)*
 - **README.md (portable-home branch):** What the experiment was, how its last version works (per-app folders, a shared home of symlinked desktop settings, wrappers that mount each app's home with fuse-overlayfs), what it needs, and the AI notice *(Claude, directed by user)*
 - **README.md:** A notice near the top that the code and documentation were written mostly by AI (Claude and Grok) under the author's direction, tested only on the author's system and not reviewed by anyone else, with advice to read the scripts, start with `-c` and keep backups *(Claude, directed by user)*
 - **README.md:** What the tool does, requirements, installation, usage, adding items with `make-update-cfg` or by hand (every manager and its keys, with an example cfg for each mode), the GitHub token, how installs stay safe, and the code layout *(Claude, directed by user)*
 - **lib/cfg.sh, lib/main.sh, make-update-cfg:** Each mode's folder comes from `~/.config/update-tools/update-paths.cfg` (`$XDG_CONFIG_HOME` if set): `app_dir`, `apw_dir` and `iso_dir`, read like a cfg (never sourced; unknown keys are reported) by the new `load_paths`, with a leading `~` or `$HOME` expanded. AppImages fall back to `~/AppImages`; worlds and ISOs have no default, and their mode stops with `no folder set for …: add KEY=DIR to …` until the key is set or `-r` is given *(Claude, directed by user)*
 
 ### Changed
+- **README.md, CLAUDE.md:** Point to the Windows port; CLAUDE.md says how to keep it in step with the bash version and how to test it *(Claude, directed by user)*
 - **lib/cli.sh:** The help text lists the folders the paths file sets (or `(not set)`) instead of fixed paths, and no longer names a `_ISO` folder, which came from a Ventoy theme, not Ventoy itself *(Claude, directed by user)*
 - **lib/cfg.sh:** `load_cfg FILE [KEY…]` takes the keys a file may set (default: `CFG_KEYS`) *(Claude, directed by user)*
 - **README.md, CLAUDE.md:** The paths file instead of the author's folders; no `_ISO` folder in the examples *(Claude, directed by user)*
