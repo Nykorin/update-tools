@@ -227,6 +227,7 @@ process_item() {
     fi
 
     # a rename on one disk; should it still fail, put the old version back
+    begin_install "$target"
     if ! mv -f "$new_file" "$target"; then
         restore_previous
         say "  ✗ $name: could not install ${target##*/}, kept the old one"

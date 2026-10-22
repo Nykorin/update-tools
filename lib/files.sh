@@ -53,6 +53,11 @@ hash_file() {
 # Ventoy can't list it.
 # ---------------------------------------------------------------------------
 ASIDE=()
+# The new file's path from just before it's moved in. The old versions are
+# aside by then, so a target that exists means the install happened: an old
+# one with another name must not come back next to it. Also kept in
+# TMP_DIR/target for recover_previous after a run killed outright.
+INSTALL_TARGET=""
 
 previous_path() {
     printf '%s\n' "$TMP_DIR/${1#"${TMP_DIR%/*}/"}.previous"
@@ -84,6 +89,17 @@ prune_previous() {
     while [[ "$d" == "$TMP_DIR"/* ]] && rmdir "$d" 2>/dev/null; do d="${d%/*}"; done
 }
 
+# Records $1 as the install's target, right before the mv.
+begin_install() {
+    INSTALL_TARGET="$1"
+    mkdir -p "$TMP_DIR" && printf '%s\n' "$1" > "$TMP_DIR/target"
+}
+
+end_install() {
+    INSTALL_TARGET=""
+    rm -f "${TMP_DIR:-}${TMP_DIR:+/target}"
+}
+
 restore_previous() {
     local f p
     for f in "${ASIDE[@]}"; do
@@ -91,6 +107,7 @@ restore_previous() {
         mv -f "$p" "$f" && prune_previous "$p"
     done
     ASIDE=()
+    end_install
 }
 
 drop_previous() {
@@ -101,22 +118,36 @@ drop_previous() {
         debug "deleted the old version, ${f##*/}"
     done
     ASIDE=()
+    end_install
+}
+
+# The EXIT trap's part: an interrupted install keeps the new file if it got
+# in, and the old one otherwise.
+settle_previous() {
+    if [[ -n "$INSTALL_TARGET" && -e "$INSTALL_TARGET" ]]; then
+        drop_previous
+    else
+        restore_previous
+    fi
 }
 
 # After a run that was killed outright: an old version whose file is missing
-# goes back; one whose file is there (the new one went in) is deleted.
+# goes back, unless the new one got in under another name; one whose file is
+# there (the new one went in) is deleted.
 recover_previous() {
-    local p f
+    local p f target=""
     [[ -d "$TMP_DIR" ]] || return 0
+    [[ -f "$TMP_DIR/target" ]] && read -r target < "$TMP_DIR/target"
     while IFS= read -r -d '' p; do
         f="${TMP_DIR%/*}/${p#"$TMP_DIR/"}"; f="${f%.previous}"
-        if [[ -e "$f" ]]; then
+        if [[ -e "$f" || ( -n "$target" && -e "$target" ) ]]; then
             rm -f "$p"
         else
             mv "$p" "$f" && say "⚠ put back ${f##*/}, which an interrupted run had moved aside"
         fi
         prune_previous "$p"
     done < <(find "$TMP_DIR" -type f -name '*.previous' -print0)
+    rm -f "$TMP_DIR/target"
 }
 
 # Sets new_name, the name to install under: CANDIDATE (the upstream name,

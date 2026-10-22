@@ -32,12 +32,13 @@ require_cmds() {
 tmp_download="" tmp_extract_dir="" DESKTOP_TMP=""
 
 # The EXIT trap: removes the GitHub headers file, curl_run's log, timed's files
-# and any staged download or extraction, and puts back an old version still set
-# aside. rm -f ignores an empty name, so unset ones need no check.
+# and any staged download or extraction, and settles an old version still set
+# aside (back, unless the new one is in). rm -f ignores an empty name, so unset
+# ones need no check.
 cleanup() {
     rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}" "$tmp_download"
     rm -rf "$tmp_extract_dir" "$DESKTOP_TMP"
-    restore_previous
+    settle_previous
     return 0
 }
 
