@@ -8,6 +8,9 @@ Bash scripts that keep three kinds of downloaded software up to date:
 
 Each item is described by a small `key=value` config file that says where its new versions come from: a GitHub or GitLab release, a fixed download URL, a JSON feed, a web server's folder listing, or a dated file name. One command checks them all and installs what changed.
 
+> [!IMPORTANT]
+> **This project was written with AI.** Almost all of the code and documentation was written by AI assistants (Claude by Anthropic, and Grok by xAI), following the author's design, requests and review. The author tested it on their own Linux system, with their own AppImages, Archipelago worlds and Ventoy drive, but it has not been reviewed or tested by anyone else. Read the scripts before running them, try `-c` (check only) first, and keep backups of anything you point it at. It comes with no warranty. `CHANGELOG.md` and the git history credit each change to the user, Claude or Grok.
+
 ## Requirements
 
 - bash 4.3 or newer, and the usual tools (`awk`, `sed`, `find`, `df`)
