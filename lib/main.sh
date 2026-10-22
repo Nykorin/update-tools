@@ -8,17 +8,20 @@
 
 # Each mode's settings, by ITEM_TYPE: ITEM_TITLE (its heading under -m all),
 # ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg), ITEM_MODE (for installed files;
-# empty leaves the mode alone), DEFAULT_DIR, and for the folder-not-found error
-# NOT_FOUND_HINT (may be empty) and ROOT_HINT (the -r advice, left out under -m
-# all, which refuses -r).
+# empty leaves the mode alone), DEFAULT_DIR (from the paths file; empty when it
+# isn't set there) and DIR_KEY (its key in that file), and for the
+# folder-not-found error NOT_FOUND_HINT (may be empty) and ROOT_HINT (the -r
+# advice, left out under -m all, which refuses -r).
 # shellcheck disable=SC2034  # used by the modules and the shared libraries
 item_settings() {
+    load_paths
     case "$ITEM_TYPE" in
         app)
             ITEM_TITLE="AppImages"
             ITEM_EXT="appimage"
             ITEM_MODE="755"
-            DEFAULT_DIR="$HOME/AppImages"
+            DIR_KEY="app_dir"
+            DEFAULT_DIR="${app_dir:-$HOME/AppImages}"
             NOT_FOUND_HINT=""
             ROOT_HINT="Point to the AppImages folder with -r DIR."
             ;;
@@ -27,7 +30,8 @@ item_settings() {
             ITEM_TITLE="Archipelago worlds"
             ITEM_EXT="apworld"
             ITEM_MODE="644"
-            DEFAULT_DIR="/mnt/games_rando/Archipelago/custom_worlds"
+            DIR_KEY="apw_dir"
+            DEFAULT_DIR="${apw_dir:-}"
             NOT_FOUND_HINT="Is the games drive mounted?"
             ROOT_HINT="Point to the folder with -r DIR."
             ;;
@@ -37,7 +41,8 @@ item_settings() {
             ITEM_EXT="iso"
             # exFAT has no modes
             ITEM_MODE=""
-            DEFAULT_DIR="/mnt/ventoy/_ISO"
+            DIR_KEY="iso_dir"
+            DEFAULT_DIR="${iso_dir:-}"
             NOT_FOUND_HINT="Is the Ventoy drive mounted?"
             ROOT_HINT="Point to it with -r DIR."
             ;;
@@ -258,6 +263,11 @@ run_mode() {
 
     dir="${ROOT_ARG:-$DEFAULT_DIR}"
     dir="${dir%/}"
+    if [[ -z "$dir" ]]; then
+        [[ "$MODE" == all ]] && ROOT_HINT=""
+        echo "ERROR: no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$PATHS_FILE").${ROOT_HINT:+ $ROOT_HINT}" >&2
+        exit 1
+    fi
     if [[ ! -d "$dir" ]]; then
         [[ "$MODE" == all ]] && ROOT_HINT=""
         echo "ERROR: $dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}${ROOT_HINT:+ $ROOT_HINT}" >&2

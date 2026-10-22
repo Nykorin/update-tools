@@ -244,6 +244,7 @@ make_cfg() {
     ITEM_TYPE="$MODE"
     item_settings
     dir="${ROOT_ARG:-$DEFAULT_DIR}"; dir="${dir%/}"
+    [[ -n "$dir" ]] || die "no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$PATHS_FILE"), or use -r DIR"
     [[ -d "$dir" ]] || die "$dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}"
     CFG_DIR="$dir/.cfg"
     require_cmds "$ITEM_TYPE"

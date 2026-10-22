@@ -29,22 +29,24 @@ ln -s "$PWD/update-tools/make-update-cfg" ~/.local/bin/make-update-cfg
 
 Both commands find their `lib/` folder through the symlink, so they can be linked from anywhere on your `PATH`.
 
-The default folders are the author's:
+### Folders
 
-| Mode | Default folder |
-|---|---|
-| AppImages | `~/AppImages` |
-| Archipelago worlds | `/mnt/games_rando/Archipelago/custom_worlds` |
-| ISOs | `/mnt/ventoy/_ISO` |
+Each mode works in one folder, set in `~/.config/update-tools/update-paths.cfg` (or under `$XDG_CONFIG_HOME`):
 
-Use `-r DIR` to point a mode at another folder, or change `DEFAULT_DIR` in `item_settings` (`lib/main.sh`) and the matching line of the help text in `usage` (`lib/cli.sh`).
+```ini
+app_dir=~/AppImages
+apw_dir=~/Games/Archipelago/custom_worlds
+iso_dir=/run/media/me/Ventoy
+```
+
+The file is read as `key=value` data, never run as shell code; a leading `~` or `$HOME` is expanded. AppImages default to `~/AppImages`. Worlds and ISOs have no default: until their key is set, their mode stops with a message naming it. `-r DIR` overrides the folder for one run, and `update-tools -h` lists the folders in use.
 
 ## Usage
 
 ```sh
 update-tools -m app          # update the AppImages
 update-tools -m apw -c       # only check the worlds, download nothing
-update-tools -m iso -r /run/media/me/Ventoy/_ISO
+update-tools -m iso -r /run/media/me/Ventoy
 update-tools -m all          # all three in turn
 ```
 
@@ -96,7 +98,7 @@ repo_filename=*.apworld
 ```
 
 ```ini
-# _ISO/.cfg/archlinux.iso.cfg
+# .cfg/archlinux.iso.cfg in the ISO folder
 folder=Linux/ArchLinux
 manager=static
 url=https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso
@@ -118,7 +120,7 @@ ISO cfgs also need:
 
 | Key | Meaning |
 |---|---|
-| `folder` | the ISO's folder, relative to the `_ISO` root |
+| `folder` | the ISO's folder, relative to the ISO folder (`iso_dir`) |
 | `checksum` | the checksum file: a name or glob next to the ISO, or a URL; `{iso}` stands for the ISO's file name |
 | `checksum_save` | optional: the local name for the saved checksum file |
 

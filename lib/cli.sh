@@ -5,8 +5,14 @@
 ROOT_ARG=""
 MODE=""
 
-# The help text: -h, no arguments, and after a bad option (to stderr).
+# The help text: -h, no arguments, and after a bad option (to stderr). The
+# folders are the ones the paths file sets.
 usage() {
+    local app apw iso
+    load_paths
+    app=$(tilde "${app_dir:-$HOME/AppImages}"); [[ -n "${app_dir:-}" ]] || app+=" (the default)"
+    apw=$(tilde "${apw_dir:-(not set)}")
+    iso=$(tilde "${iso_dir:-(not set)}")
     cat <<EOF
 Usage: ${0##*/} -m MODE [OPTIONS]
 Check and update AppImages, Archipelago worlds and ISOs. Each item has a cfg
@@ -14,14 +20,18 @@ Check and update AppImages, Archipelago worlds and ISOs. Each item has a cfg
 one whose item isn't there yet is installed.
 
 Modes:
-  app, appimages    the AppImages in ~/AppImages (desktop entries go to
+  app, appimages    the AppImages (desktop entries go to
                     ~/.local/share/applications)
-  apw, apworlds     the Archipelago worlds in
-                    /mnt/games_rando/Archipelago/custom_worlds
-  iso, isos         the ISOs on the Ventoy drive (/mnt/ventoy/_ISO); each cfg's
+  apw, apworlds     the Archipelago custom worlds
+  iso, isos         the ISOs on a Ventoy drive; each cfg's
                     folder= names the ISO's folder, and every download is
                     checksum-verified before it replaces anything
   all               all three in turn, skipping any that can't run
+
+Folders ($(tilde "$PATHS_FILE")):
+  app_dir=          $app
+  apw_dir=          $apw
+  iso_dir=          $iso
 
 Options:
   -m, --mode MODE   what to update (required; see Modes)

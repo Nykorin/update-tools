@@ -10,6 +10,15 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ### Added
 - **README.md:** What the tool does, requirements, installation, usage, adding items with `make-update-cfg` or by hand (every manager and its keys, with an example cfg for each mode), the GitHub token, how installs stay safe, and the code layout *(Claude, directed by user)*
+- **lib/cfg.sh, lib/main.sh, make-update-cfg:** Each mode's folder comes from `~/.config/update-tools/update-paths.cfg` (`$XDG_CONFIG_HOME` if set): `app_dir`, `apw_dir` and `iso_dir`, read like a cfg (never sourced; unknown keys are reported) by the new `load_paths`, with a leading `~` or `$HOME` expanded. AppImages fall back to `~/AppImages`; worlds and ISOs have no default, and their mode stops with `no folder set for …: add KEY=DIR to …` until the key is set or `-r` is given *(Claude, directed by user)*
+
+### Changed
+- **lib/cli.sh:** The help text lists the folders the paths file sets (or `(not set)`) instead of fixed paths, and no longer names a `_ISO` folder, which came from a Ventoy theme, not Ventoy itself *(Claude, directed by user)*
+- **lib/cfg.sh:** `load_cfg FILE [KEY…]` takes the keys a file may set (default: `CFG_KEYS`) *(Claude, directed by user)*
+- **README.md, CLAUDE.md:** The paths file instead of the author's folders; no `_ISO` folder in the examples *(Claude, directed by user)*
+
+### Removed
+- **lib/main.sh, lib/cli.sh:** The author's folders (`/mnt/games_rando/Archipelago/custom_worlds`, `/mnt/ventoy/_ISO`) as built-in defaults *(Claude, directed by user)*
 
 ---
 
