@@ -128,7 +128,8 @@ prepare_dir() {
     # doesn't list)
     TMP_DIR="$dir/.tmp"
     # left over from a run that was killed outright (Ctrl+C cleans up after
-    # itself): an old version goes back, a half-downloaded ISO goes
+    # itself): an old version goes back, a half-downloaded ISO goes (.NAME.part:
+    # an upstream name may not end in .iso)
     recover_previous
-    find "$dir" -mindepth 1 -name '.*.iso.part' -type f -delete
+    find "$dir" -mindepth 1 -name '.*.part' -type f -delete
 }
