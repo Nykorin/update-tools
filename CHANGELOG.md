@@ -6,6 +6,16 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-11-04]
+
+### Added
+- **lib/cfg.sh, lib/appimages.sh:** An optional `icon_name` key for AppImages, overriding the icon name the AppImage's own `.desktop` gives, for an icon theme that names the app differently (Beeper ships `beepertexts`, YAMIS has `Beeper`; LibreOffice ships a versioned `libreoffice26.8-startcenter`) *(Claude, directed by user)*
+
+### Changed
+- **lib/appimages.sh:** Desktop entries name their icon (`Icon=org.duckstation.DuckStation`, from `icon_name`, else the AppImage's own `.desktop`, else the cfg name) instead of pointing at a file in `~/AppImages/.icons/`, so the icon theme supplies it when it has the app, in whatever format it has (`.svg` included), and a theme switch applies at once. The extracted icon is saved in `.icons/` under that name, the fallback for icons no theme has once `~/.icons` links to `.icons/` (the icon spec's lookup of unthemed icons); a run warns while it doesn't. An icon added by hand under the cfg name is renamed to match. Existing entries change on each app's next update, or all at once with `-f` *(Claude, directed by user)*
+
+---
+
 ## [2026-10-22]
 
 ### Added

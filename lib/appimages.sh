@@ -17,6 +17,16 @@ icon_exists() {
         -print -quit 2>/dev/null
 }
 
+# Removes the icons in $1 named $2, $3, ... (any of the extensions, any case).
+remove_icons() {
+    local dir="$1" n
+    local -a expr=()
+    for n in "${@:2}"; do
+        expr+=(-o -iname "$n.png" -o -iname "$n.svg" -o -iname "$n.xpm" -o -iname "$n.ico")
+    done
+    find "$dir" -maxdepth 1 \( "${expr[@]:1}" \) -delete
+}
+
 # $1 dir, $2 maxdepth (empty = unlimited), $3 non-empty = pick by version sort
 # (scalable first, else the largest size). Needed for icon-theme trees, where
 # find's own order is arbitrary and could hand back a 16x16 icon.
@@ -33,7 +43,6 @@ find_icon() {
 
 generate_desktop_entry() {
     local name="$1" appimage_file="$2"
-    local icon_dest="$ICONS_DIR/$name"
     local desktop_dest; desktop_dest=$(desktop_entry_path "$name")
     mkdir -p "$ICONS_DIR" "${desktop_dest%/*}"
     local tmp_extract="$TMP_DIR/desktop"
@@ -52,28 +61,44 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && \
         embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
+    # The entry names its icon instead of pointing at a file, so the icon theme
+    # supplies it when it has one. ~/.icons -> .icons/ is the fallback (the icon
+    # spec's lookup of unthemed icons, by exact name), so the file is saved
+    # under that name too.
+    local icon="${icon_name:-}"
+    [[ -z "$icon" && -n "$embedded_desktop" ]] && \
+        icon=$(sed -n '/^Icon=/{s///p;q}' "$embedded_desktop")
+    icon="${icon%.png}"; icon="${icon%.svg}"; icon="${icon%.xpm}"
+    # a path instead of a name, or none at all
+    [[ -z "$icon" || "$icon" == */* ]] && icon="$name"
+    debug "icon name: $icon${icon_name:+ (icon_name)}"
+
     # Re-extracted every time, so a changed icon in a new release comes along.
-    # The old file goes first (it may have another extension); an AppImage
-    # without an icon leaves whatever is there, such as one added by hand.
-    # Tiers, in priority order, as "dir:maxdepth:sorted".
+    # The old file goes first (it may have another extension or name); an
+    # AppImage without an icon leaves whatever is there, such as one added by
+    # hand. Tiers, in priority order, as "dir:maxdepth:sorted".
     local icon_src="" tier icon_dir maxdepth sorted
     for tier in "$squashfs_root:1:" "$squashfs_root/usr/share/icons::sorted" "$squashfs_root::"; do
         IFS=: read -r icon_dir maxdepth sorted <<<"$tier"
         icon_src=$(find_icon "$icon_dir" "$maxdepth" "$sorted")
         [[ -n "$icon_src" ]] && break
     done
+    local old_icon
     if [[ -n "$icon_src" ]]; then
-        find "$ICONS_DIR" -maxdepth 1 \( -iname "$name.png" -o -iname "$name.svg" -o -iname "$name.xpm" -o -iname "$name.ico" \) -delete
-        cp -L "$icon_src" "${icon_dest}.${icon_src##*.}"
+        remove_icons "$ICONS_DIR" "$name" "$icon"
+        cp -L "$icon_src" "$ICONS_DIR/$icon.${icon_src##*.}"
         status "🖼 icon extracted"
-    elif [[ -z "$(icon_exists "$ICONS_DIR" "$name")" ]]; then
-        say "  ⚠ No icon found for $name"
+    else
+        # one added by hand under the cfg name follows the entry's icon name
+        old_icon=$(icon_exists "$ICONS_DIR" "$name")
+        if [[ -n "$old_icon" && -z "$(icon_exists "$ICONS_DIR" "$icon")" ]]; then
+            mv -f "$old_icon" "$ICONS_DIR/$icon.${old_icon##*.}"
+        fi
+        [[ -z "$(icon_exists "$ICONS_DIR" "$icon")" ]] && say "  ⚠ No icon found for $name"
     fi
 
-    local icon_path; icon_path=$(icon_exists "$ICONS_DIR" "$name")
-
     if [[ -n "$embedded_desktop" ]]; then
-        sed -e "s|^Icon=.*|Icon=${icon_path:-}|" \
+        sed -e "s|^Icon=.*|Icon=$icon|" \
             -e "s|^TryExec=.*|TryExec=$appimage_file|" \
             -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $appimage_file %f|" \
             "$embedded_desktop" > "$desktop_dest"
@@ -83,7 +108,7 @@ generate_desktop_entry() {
 [Desktop Entry]
 Type=Application
 Name=$name
-Icon=${icon_path:-}
+Icon=$icon
 TryExec=$appimage_file
 Exec=env DESKTOPINTEGRATION=1 $appimage_file %f
 Categories=Utility;
@@ -128,6 +153,11 @@ prepare_dir() {
     ICONS_DIR="$dir/.icons"
     TMP_DIR="$dir/.tmp"
     mkdir -p "$ICONS_DIR"
+    # entries name their icon, and the desktop looks for icons no theme has in
+    # ~/.icons, not here
+    if [[ "$(readlink -f "$HOME/.icons")" != "$(readlink -f "$ICONS_DIR")" ]]; then
+        say "⚠ ~/.icons doesn't lead to $ICONS_DIR, so icons your theme lacks won't show (ln -s '$ICONS_DIR' ~/.icons)"
+    fi
     # anything left here is from an interrupted earlier run: an old version goes
     # back first, the rest is thrown away
     recover_previous
