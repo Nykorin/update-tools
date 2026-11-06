@@ -59,11 +59,11 @@ Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else
 ## Adding an item
 
 ```powershell
-.\make-update-cfg.ps1 apw https://github.com/OrcThrowman/7-Days-to-Die-AP
-.\make-update-cfg.ps1 iso https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
+.\make-update-cfg.ps1 -m apw https://github.com/OrcThrowman/7-Days-to-Die-AP
+.\make-update-cfg.ps1 -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
 ```
 
-`make-update-cfg.ps1 TYPE LINK [NAME]` (TYPE `apw` or `iso`; `-r DIR`, `-d`) works like the bash version: a GitHub or GitLab project becomes a cfg that follows its releases, any other link a fixed download, and an ISO also gets the checksum file found next to it. It checks the cfg with the same lookup `update-tools.ps1` uses before writing it, and never overwrites one. The one difference: here builds for Linux, Mac and ARM are left out, not Windows ones. Cfgs can also be written by hand, as described in the main README.
+`make-update-cfg.ps1 -m TYPE [-u] LINK [NAME]` (TYPE `apw` or `iso`; `-l` for the latest stable release, the default, or `-p` for the newest one, pre-releases included; `-r DIR`, `-d`) works like the bash version: a GitHub or GitLab project becomes a cfg that follows its releases, any other link a fixed download, and an ISO also gets the checksum file found next to it. It checks the cfg with the same lookup `update-tools.ps1` uses before writing it, and never overwrites one. The one difference: here builds for Linux, Mac and ARM are left out, not Windows ones. Cfgs can also be written by hand, as described in the main README.
 
 A GitHub token goes in `$env:GITHUB_TOKEN` or on the first line of `%APPDATA%\update-tools\github_token`. It's only ever sent to api.github.com.
 

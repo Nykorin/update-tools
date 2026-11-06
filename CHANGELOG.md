@@ -8,7 +8,13 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ## [2026-11-06]
 
+### Added
+- **update-appimages, update-apworlds, update-isos:** One command per mode, split like system-update's scripts: each updates one kind and takes `-c`, `-f`, `-r DIR`, `-d` and `-h`, with a help text of its own that lists only its folder (and `-f`'s desktop-entry rebuild only for AppImages). Without arguments they run. Each is a few lines calling `update_tools TYPE`; everything else stays shared in `lib/` *(Claude, directed by user)*
+
 ### Changed
+- **update-tools, lib/main.sh, lib/cli.sh:** `update-tools` runs all three (what `-m all` did: a `▶` heading per mode, carrying on past one that can't run, `⚠ skipped: …` and exit 1), and without arguments it runs instead of printing the help. `-m`/`--mode` is gone; `-r` is refused with a pointer to the per-mode commands. `set_mode` is kept for `make-update-cfg -m` and no longer accepts `all` *(Claude, directed by user)*
+- **make-update-cfg:** Its closing hint names the mode's command (`update-apworlds -c shows the install`) *(Claude, directed by user)*
+- **README.md, windows/README.md:** The new commands (install, usage, layout), and `make-update-cfg`'s `-m`, `-u`, `-l` and `-p`, which the READMEs hadn't caught up with *(Claude, directed by user)*
 - **make-update-cfg, windows/make-update-cfg.ps1:** The type is `-m`/`--mode TYPE` (`-Mode`), like update-tools, instead of the first argument; the link can be given as `-u`/`--url LINK` (`-Url`), with NAME then the only argument. New `-l`/`--latest` (`-Latest`, the default) takes the latest stable release and writes `allow_prereleases=false`, and `-p`/`--prerelease` (`-Prerelease`) takes the newest release, pre-releases included, and writes `allow_prereleases=true` (was: stable first, else a pre-release, with nothing written). Both are GitHub-only; `-p` on a GitLab or static link is ignored with a warning. A repo with only pre-releases now needs `-p`, and the error says so *(Claude, directed by user)*
 
 ---

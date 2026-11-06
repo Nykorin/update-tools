@@ -1,22 +1,25 @@
 # shellcheck shell=bash disable=SC2154
-# main.sh: what update-tools runs. update_tools parses the flags and runs each
+# main.sh: what the commands run. update_tools parses the flags and runs each
 # mode in its own subshell (run_mode), which loads that mode's module
 # (appimages.sh, apworlds.sh or isos.sh: prepare_dir and the hooks) and walks
 # its cfgs with the one process_item. A subshell per mode keeps one mode's
-# variables, traps and failures out of the next one under -m all.
+# variables, traps and failures out of the next one when update-tools runs
+# all three.
 # SC2154: cfg keys and manager results are assigned outside this file.
 
-# Each mode's settings, by ITEM_TYPE: ITEM_TITLE (its heading under -m all),
+# Each mode's settings, by ITEM_TYPE: ITEM_CMD (its command), ITEM_TITLE (its
+# heading when update-tools runs all three),
 # ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg), ITEM_MODE (for installed files;
 # empty leaves the mode alone), DEFAULT_DIR (from the paths file; empty when it
 # isn't set there) and DIR_KEY (its key in that file), and for the
 # folder-not-found error NOT_FOUND_HINT (may be empty) and ROOT_HINT (the -r
-# advice, left out under -m all, which refuses -r).
+# advice, left out under update-tools, which refuses -r).
 # shellcheck disable=SC2034  # used by the modules and the shared libraries
 item_settings() {
     load_settings
     case "$ITEM_TYPE" in
         app)
+            ITEM_CMD="update-appimages"
             ITEM_TITLE="AppImages"
             ITEM_EXT="appimage"
             ITEM_MODE="755"
@@ -27,6 +30,7 @@ item_settings() {
             ;;
 
         apw)
+            ITEM_CMD="update-apworlds"
             ITEM_TITLE="Archipelago worlds"
             ITEM_EXT="apworld"
             ITEM_MODE="644"
@@ -37,6 +41,7 @@ item_settings() {
             ;;
 
         iso)
+            ITEM_CMD="update-isos"
             ITEM_TITLE="ISOs"
             ITEM_EXT="iso"
             # exFAT has no modes
@@ -265,12 +270,12 @@ run_mode() {
     dir="${ROOT_ARG:-$DEFAULT_DIR}"
     dir="${dir%/}"
     if [[ -z "$dir" ]]; then
-        [[ "$MODE" == all ]] && ROOT_HINT=""
+        [[ -z "$RUN_TYPE" ]] && ROOT_HINT=""
         echo "ERROR: no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$SETTINGS_FILE").${ROOT_HINT:+ $ROOT_HINT}" >&2
         exit 1
     fi
     if [[ ! -d "$dir" ]]; then
-        [[ "$MODE" == all ]] && ROOT_HINT=""
+        [[ -z "$RUN_TYPE" ]] && ROOT_HINT=""
         echo "ERROR: $dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}${ROOT_HINT:+ $ROOT_HINT}" >&2
         exit 1
     fi
@@ -298,30 +303,22 @@ run_mode() {
     finish_progress
 }
 
-# The command. No arguments prints the help; -m all runs every mode in turn,
-# carries on past one that can't run, and exits 1 at the end if any didn't.
+# The commands: update_tools TYPE ARGS… for update-appimages, update-apworlds
+# and update-isos, update_tools "" ARGS… for update-tools, which runs all
+# three in turn, carries on past one that can't run, and exits 1 at the end if
+# any didn't.
 # shellcheck disable=SC2034  # force, check_only, NOW and checked_at are read by the modes
 update_tools() {
-    if (( $# == 0 )); then
-        usage
-        exit 0
-    fi
+    RUN_TYPE="$1"; shift
     force=false check_only=false
     parse_flags "$@"
-    if [[ -z "$MODE" ]]; then
-        echo "${0##*/}: -m MODE is required" >&2; usage >&2; exit 2
-    fi
-    if [[ "$MODE" == all && -n "$ROOT_ARG" ]]; then
-        echo "${0##*/}: -r can't be used with -m all (each mode has its own folder)" >&2
-        exit 2
-    fi
     # one time for the whole run: what last_checked saves, and what it's compared with
     printf -v NOW '%(%s)T' -1
     printf -v checked_at '%(%FT%H:%M)T' "$NOW"
 
     local -a modes skipped=()
     local m
-    if [[ "$MODE" == all ]]; then modes=(app apw iso); else modes=("$MODE"); fi
+    if [[ -n "$RUN_TYPE" ]]; then modes=("$RUN_TYPE"); else modes=(app apw iso); fi
     for m in "${modes[@]}"; do
         ITEM_TYPE="$m"; item_settings
         (( ${#modes[@]} > 1 )) && printf '▶ %s\n' "$ITEM_TITLE"

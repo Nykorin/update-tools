@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# update-isos: checks and updates the ISOs on the Ventoy drive.
+# Run with -h for the help; update-tools runs it along with the other two.
+set -uo pipefail
+
+# the script's real folder, through any symlink, so lib/ is found next to it
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+# shellcheck source=lib/load.sh
+source "$SCRIPT_DIR/lib/load.sh" || exit 1
+
+update_tools iso "$@"

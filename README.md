@@ -6,7 +6,7 @@ Bash scripts that keep three kinds of downloaded software up to date:
 - **Archipelago custom worlds** (`.apworld` files), including worlds shipped inside a mod's release zip
 - **ISOs on a Ventoy drive**, every download checksum-verified before it replaces anything
 
-Each item is described by a small `key=value` config file that says where its new versions come from: a GitHub or GitLab release, a fixed download URL, a JSON feed, a web server's folder listing, or a dated file name. One command checks them all and installs what changed.
+Each item is described by a small `key=value` config file that says where its new versions come from: a GitHub or GitLab release, a fixed download URL, a JSON feed, a web server's folder listing, or a dated file name. One command per kind checks its items and installs what changed, and `update-tools` runs all three.
 
 > [!IMPORTANT]
 > **This project was written with AI.** Almost all of the code and documentation was written by AI assistants (Claude by Anthropic, and Grok by xAI), following the author's design, requests and review. The author tested it on their own Linux system, with their own AppImages, Archipelago worlds and Ventoy drive, but it has not been reviewed or tested by anyone else. Read the scripts before running them, try `-c` (check only) first, and keep backups of anything you point it at. It comes with no warranty. `CHANGELOG.md` and the git history credit each change to the user, Claude or Grok.
@@ -21,18 +21,19 @@ On Windows, a PowerShell port of the worlds and ISO modes is in [`windows/`](win
 - `unzip` for worlds (and for AppImages released as zips; `tar` for `.tar.*` ones)
 - `sha256sum` and `sha512sum` for ISOs
 
-The command checks for what its mode needs and says what's missing.
+Each command checks for what it needs and says what's missing.
 
 ## Install
 
 ```sh
 git clone https://github.com/Nykorin/update-tools.git
 mkdir -p ~/.local/bin
-ln -s "$PWD/update-tools/update-tools" ~/.local/bin/update-tools
-ln -s "$PWD/update-tools/make-update-cfg" ~/.local/bin/make-update-cfg
+for c in update-tools update-appimages update-apworlds update-isos make-update-cfg; do
+    ln -s "$PWD/update-tools/$c" ~/.local/bin/"$c"
+done
 ```
 
-Both commands find their `lib/` folder through the symlink, so they can be linked from anywhere on your `PATH`.
+Every command finds its `lib/` folder through the symlink, so they can be linked from anywhere on your `PATH`.
 
 ### Settings
 
@@ -47,23 +48,24 @@ skip_checked=on
 skip_hours=24
 ```
 
-The file is read as `key=value` data, never run as shell code (comments go on their own lines); a leading `~` or `$HOME` is expanded. AppImages default to `~/AppImages`. Worlds and ISOs have no default: until their key is set, their mode stops with a message naming it. `-r DIR` overrides the folder for one run, and `update-tools -h` lists the folders in use.
+The file is read as `key=value` data, never run as shell code (comments go on their own lines); a leading `~` or `$HOME` is expanded. AppImages default to `~/AppImages`. Worlds and ISOs have no default: until their key is set, their mode stops with a message naming it. `-r DIR` overrides the folder for one run of `update-appimages`, `update-apworlds` or `update-isos`, and `-h` lists the folders in use.
 
 ## Usage
 
 ```sh
-update-tools -m app          # update the AppImages
-update-tools -m apw -c       # only check the worlds, download nothing
-update-tools -m iso -r /run/media/me/Ventoy
-update-tools -m all          # all three in turn
+update-appimages             # update the AppImages
+update-apworlds -c           # only check the worlds, download nothing
+update-isos -r /run/media/me/Ventoy
+update-tools                 # all three in turn
 ```
+
+`update-tools` runs `update-appimages`, `update-apworlds` and `update-isos` in that order, each under a heading. One that can't run (its folder missing, or a command it needs) prints why and the others still run; the run then ends with a list of what was skipped.
 
 | Option | Meaning |
 |---|---|
-| `-m`, `--mode MODE` | what to update: `app` (`appimages`), `apw` (`apworlds`), `iso` (`isos`) or `all` |
 | `-c`, `--check` | look up and compare, then report what would be updated; downloads and writes nothing |
 | `-f`, `--force` | check items checked within `skip_hours` too; for AppImages, also rebuild each desktop entry and icon |
-| `-r`, `--root DIR` | use DIR instead of the mode's folder (not with `-m all`) |
+| `-r`, `--root DIR` | use DIR instead of the folder set in the settings (not with `update-tools`) |
 | `-d`, `--debug` | explain each decision and time each item (or `DEBUG=1`) |
 | `-h`, `--help` | show the help |
 
@@ -74,14 +76,14 @@ Each item is checked at most once per `skip_hours` (24 by default) unless `-f` i
 ### With make-update-cfg
 
 ```sh
-make-update-cfg app https://github.com/TwilitRealm/dusklight
-make-update-cfg apw https://github.com/OrcThrowman/7-Days-to-Die-AP
-make-update-cfg iso https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
+make-update-cfg -m app https://github.com/TwilitRealm/dusklight
+make-update-cfg -m apw -p https://github.com/OrcThrowman/7-Days-to-Die-AP
+make-update-cfg -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
 ```
 
-It reads the link, writes the cfg, and checks it with the same lookup `update-tools` uses before saving it. The next `update-tools` run installs the item.
+`-m` is `app`, `apw` or `iso`; the link comes next or after `-u`, then an optional name for the cfg. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next run of that kind's command (or `update-tools`) installs the item.
 
-- **GitHub or GitLab projects:** it takes the newest release with something installable, ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
+- **GitHub or GitLab projects:** it takes the latest stable release with something installable (`-l`, the default), or with `-p` the newest release, pre-releases included; the cfg then keeps to that choice (`allow_prereleases=false` or `true`). It ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
 - **Any other link:** it becomes a fixed download.
 - **ISOs:** it also looks for a checksum file next to the ISO. Set `folder=` to the ISO's folder on the drive afterwards.
 
@@ -154,10 +156,13 @@ Put a token (no scopes needed) in `$GITHUB_TOKEN`, or on the first line of `~/.c
 ## Layout
 
 ```
-update-tools        the command
+update-tools        runs the three below in turn
+update-appimages    updates the AppImages
+update-apworlds     updates the Archipelago worlds
+update-isos         updates the ISOs
 make-update-cfg     writes a new item's cfg from a link
 lib/load.sh         loads the shared libraries
-lib/main.sh         the mode loop and the one process_item every mode shares
+lib/main.sh         the commands, the mode loop and the one process_item every mode shares
 lib/managers.sh     github, gitlab, static, jsonfeed, dirlist, dateprobe
 lib/appimages.sh    AppImage hooks: archives, desktop entries, icons
 lib/apworlds.sh     world hooks: zip checks, release zips with several worlds

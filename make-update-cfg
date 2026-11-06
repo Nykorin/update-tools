@@ -9,7 +9,7 @@ SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 # shellcheck source=lib/load.sh
 source "$SCRIPT_DIR/lib/load.sh" || exit 1
 
-# replaces update-tools' help, which set_mode prints after a bad type
+# replaces the updaters' help, which set_mode prints after a bad type
 usage() {
     cat <<EOF
 Usage: ${0##*/} -m TYPE [OPTIONS] LINK [NAME]
@@ -266,7 +266,6 @@ make_cfg() {
     (( ${#args[@]} <= 1 )) || bad "too many arguments: ${args[*]}"
     name_arg="${args[0]:-}"
     set_mode "$type_arg"
-    [[ "$MODE" == all ]] && bad "TYPE is app, apw or iso"
     prerelease="${prerelease:-false}"
     [[ "$link" == *://* ]] || link="https://$link"
 
@@ -338,7 +337,7 @@ make_cfg() {
     say "✓ wrote ${cfg/#"$HOME"/\~} (${tag:+$tag: }$asset_name):"
     sed 's/^/    /' "$cfg"
     [[ "$ITEM_TYPE" == iso ]] && say "  folder=$folder is a guess: set it to the ISO's folder under ${dir/#"$HOME"/\~}"
-    say "  update-tools -m $ITEM_TYPE -c shows the install; a run without -c does it"
+    say "  $ITEM_CMD -c shows the install; a run without -c does it"
 }
 
 make_cfg "$@"
