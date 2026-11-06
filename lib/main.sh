@@ -321,7 +321,7 @@ update_tools() {
     if [[ -n "$RUN_TYPE" ]]; then modes=("$RUN_TYPE"); else modes=(app apw iso); fi
     for m in "${modes[@]}"; do
         ITEM_TYPE="$m"; item_settings
-        (( ${#modes[@]} > 1 )) && printf '▶ %s\n' "$ITEM_TITLE"
+        (( ${#modes[@]} > 1 )) && printf '%s▶ %s%s\n' "$C_BOLD$C_CYAN" "$ITEM_TITLE" "$C_R"
         ( run_mode "$m" ) || skipped+=("$ITEM_TITLE")
     done
 
@@ -329,7 +329,8 @@ update_tools() {
     if (( ${#modes[@]} > 1 )); then
         local list
         printf -v list '%s, ' "${skipped[@]}"
-        printf '⚠ skipped: %s\n' "${list%, }"
+        paint list "⚠ skipped: ${list%, }"
+        printf '%s\n' "$list"
     fi
     exit 1
 }

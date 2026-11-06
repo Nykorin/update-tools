@@ -80,6 +80,23 @@ EOF
 }
 
 
+# Colours the help text on its way to a terminal, as system-update's -h does:
+# the command names (bold on the Usage: lines), the headings, options and
+# placeholders. Plain when piped, redirected, or with NO_COLOR or TERM=dumb
+# (the C_* colours are empty then). Errors print the help plain to stderr.
+paint_text() {
+    [[ -n "$C_R" ]] || { cat; return; }
+    local cmd='update-(tools|appimages|apworlds|isos)|make-update-cfg'
+    sed -E \
+        -e "s/^(Usage: |       )($cmd)\b/\1$C_BOLD$C_CYAN\2$C_R/" \
+        -e "s/(^|[ (,])($cmd)([ ,:)]|$)/\1$C_CYAN\2$C_R\4/g" \
+        -e "s/^(Usage|Settings|Options):?/$C_BOLD$C_YELLOW&$C_R/" \
+        -e "s/^(LINK|NAME):/$C_YELLOW\1$C_R:/" \
+        -e "s/(^|[ (/,[|])(--?[a-z][a-z-]*)/\1$C_GREEN\2$C_R/g" \
+        -e "s/\b(DIR|TYPE|LINK|NAME|OPTIONS)\b/$C_YELLOW\1$C_R/g"
+}
+
+
 # Sets force, check_only, DEBUG, and ROOT_ARG (-r, not for update-tools); -h
 # prints usage, and a bad option prints it to stderr.
 # shellcheck disable=SC2034  # force and check_only are read by the modes
@@ -103,7 +120,7 @@ parse_flags() {
                     echo "${0##*/}: ${1%%=*} needs a folder" >&2; usage >&2; exit 2
                 fi ;;
             -d|--debug) DEBUG=1 ;;
-            -h|--help)  usage; exit 0 ;;
+            -h|--help)  usage | paint_text; exit 0 ;;
             *)          echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
         esac
         shift

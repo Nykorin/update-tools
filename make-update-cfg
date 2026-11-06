@@ -251,13 +251,13 @@ make_cfg() {
                 ROOT_ARG="${1#--root=}"
                 [[ -n "$ROOT_ARG" ]] || bad "--root needs a folder" ;;
             -d|--debug) DEBUG=1 ;;
-            -h|--help)  usage; exit 0 ;;
+            -h|--help)  usage | paint_text; exit 0 ;;
             -*)         bad "unknown option '$1'" ;;
             *)          args+=("$1") ;;
         esac
         shift
     done
-    (( ${#args[@]} )) || [[ -n "$type_arg$link" ]] || { usage; exit 0; }
+    (( ${#args[@]} )) || [[ -n "$type_arg$link" ]] || { usage | paint_text; exit 0; }
     [[ -n "$type_arg" ]] || bad "need -m TYPE"
     if [[ -z "$link" ]]; then
         (( ${#args[@]} )) || bad "need a LINK"

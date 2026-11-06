@@ -9,6 +9,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-11-06]
 
 ### Added
+- **lib/progress.sh, lib/main.sh, lib/cli.sh, make-update-cfg:** Colours, as in system-update, only on a terminal and not with `NO_COLOR` or `TERM=dumb` (plain and redirected output stay free of escape codes). The output: the item name bold, ✓ green, ✗ red, ⚠ yellow, ⬆ ⬇ cyan, debug lines dimmed, `▶` headings bold cyan, the progress bar's `#` green; the status line is still cut to the terminal's width first. The help (`-h`, and `make-update-cfg` without arguments): command names cyan (bold on the Usage lines), headings yellow, options green, placeholders yellow (`paint_text`) *(Claude, directed by user)*
 - **update-appimages, update-apworlds, update-isos:** One command per mode, split like system-update's scripts: each updates one kind and takes `-c`, `-f`, `-r DIR`, `-d` and `-h`, with a help text of its own that lists only its folder (and `-f`'s desktop-entry rebuild only for AppImages). Without arguments they run. Each is a few lines calling `update_tools TYPE`; everything else stays shared in `lib/` *(Claude, directed by user)*
 
 ### Changed
