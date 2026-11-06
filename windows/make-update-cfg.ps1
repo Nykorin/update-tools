@@ -3,12 +3,16 @@ make-update-cfg.ps1: writes a new world's or ISO's cfg from a link, for
 update-tools.ps1 to install on its next run. The PowerShell port of the bash
 make-update-cfg. Run without arguments for the help.
 #>
-# positional in this order; no [Parameter()] attributes, which would make it an
-# advanced script and claim -Debug for PowerShell's own use
+# Unnamed arguments fill the parameters in this order, so LINK and NAME come
+# first; no [Parameter()] attributes, which would make it an advanced script
+# and claim -Debug for PowerShell's own use
 param(
-    [string]$Type,
     [string]$Link,
     [string]$Name,
+    [Alias('m')][string]$Mode,
+    [Alias('u')][string]$Url,
+    [Alias('l')][switch]$Latest,
+    [Alias('p')][switch]$Prerelease,
     [Alias('r')][string]$Root,
     [Alias('d')][switch]$Debug,
     [Alias('h')][switch]$Help
@@ -23,16 +27,20 @@ foreach ($lib in 'output', 'cfg', 'net', 'managers', 'files', 'isos', 'main') {
 
 function Show-Usage([switch]$ToError) {
     $text = @"
-Usage: make-update-cfg.ps1 [OPTIONS] TYPE LINK [NAME]
+Usage: make-update-cfg.ps1 -m TYPE [OPTIONS] LINK [NAME]
+       make-update-cfg.ps1 -m TYPE -u LINK [OPTIONS] [NAME]
 Write a cfg for a new Archipelago world or ISO, read from LINK. The next
 update-tools.ps1 run installs it.
 
-TYPE: apw (apworlds) or iso (isos).
 LINK: a GitHub or GitLab project, or one of its release assets (to choose
       between several); any other URL is a fixed download (static).
 NAME: the cfg's name (default: from the repo or the file name).
 
 Options:
+  -m, -Mode TYPE    apw (apworlds) or iso (isos); required
+  -u, -Url LINK     the link, instead of as the first argument
+  -l, -Latest       the latest stable release (the default; GitHub)
+  -p, -Prerelease   the newest release, pre-releases included (GitHub)
   -r, -Root DIR     the item folder (default: the mode's, as in update-tools.ps1)
   -d, -Debug        explain each decision
   -h, -Help         show this help
@@ -66,18 +74,15 @@ function Get-ReleaseNames($Release) {
 }
 
 # @{ Tag; Names } for the newest release with an asset matching $Pattern
-# (any case): stable first, like allow_prereleases=auto. $null if none has one.
+# (any case): stable only, or any with -p. $null if none has one.
 function Find-ReleaseAssets($Releases, [string]$Pattern) {
-    $first = $null
     foreach ($r in $Releases) {
         if ($r.draft) { continue }
+        if ($r.prerelease -and -not $script:Prerelease) { continue }
         $names = @(Get-ReleaseNames $r | Where-Object { $_ -match $Pattern })
-        if (-not $names.Count) { continue }
-        $hit = @{ Tag = [string]$r.tag_name; Names = $names }
-        if (-not $r.prerelease) { return $hit }
-        if (-not $first) { $first = $hit }
+        if ($names.Count) { return @{ Tag = [string]$r.tag_name; Names = $names } }
     }
-    $first
+    $null
 }
 
 # Sets $script:Tag and $script:Asset from the release list: the asset LINK
@@ -89,7 +94,10 @@ function Select-Asset($Releases, [string]$Wanted) {
         $found = Find-ReleaseAssets $Releases $pat
         if ($found) { break }
     }
-    if (-not $found) { Stop-WithError "no release has a .$($script:Ext) asset (or an archive) to install" }
+    if (-not $found) {
+        if ($script:Prerelease) { Stop-WithError "no release has a .$($script:Ext) asset (or an archive) to install" }
+        Stop-WithError "no stable release has a .$($script:Ext) asset (or an archive) to install; -p takes pre-releases too"
+    }
     $script:Tag = $found.Tag
     $names = $found.Names
     Debug-Line "release $($script:Tag) has $($names.Count) candidate(s): $($names -join ' ')"
@@ -158,6 +166,7 @@ function From-Github($it) {
     $script:Kind = 'github'
     Select-Asset $r.Releases ''
     $it.manager = 'github'
+    $it.allow_prereleases = if ($script:Prerelease) { 'true' } else { 'false' }
     Set-AssetPattern $it $r.Releases
     $script:DefaultName = Get-CleanName ($it.repo.Split('/')[1])
 }
@@ -221,12 +230,25 @@ function Find-ChecksumFile($it) {
 }
 
 # --------------------------------------------------------------------------
-if ($Help -or (-not $Type -and -not $Link)) { Show-Usage; exit 0 }
-if (-not $Type -or -not $Link) { Write-Err 'make-update-cfg.ps1: need TYPE and LINK'; Show-Usage -ToError; exit 2 }
-$script:Type = switch ($Type) {
+function Stop-WithUsage([string]$Text) {
+    Write-Err "make-update-cfg.ps1: $Text"
+    Show-Usage -ToError
+    exit 2
+}
+if ($Help -or (-not $Mode -and -not $Link -and -not $Url)) { Show-Usage; exit 0 }
+if (-not $Mode) { Stop-WithUsage 'need -m TYPE' }
+if ($Latest -and $Prerelease) { Stop-WithUsage "-l and -p can't be used together" }
+# with -u, the one unnamed argument is NAME
+if ($Url) {
+    if ($Name) { Stop-WithUsage "too many arguments: $Link $Name" }
+    $Name = $Link; $Link = $Url
+}
+if (-not $Link) { Stop-WithUsage 'need a LINK' }
+$script:Prerelease = [bool]$Prerelease
+$script:Type = switch ($Mode) {
     { $_ -in 'apw', 'apworlds' } { 'apw' }
     { $_ -in 'iso', 'isos' } { 'iso' }
-    default { Write-Err "make-update-cfg.ps1: TYPE is apw or iso (got '$Type')"; Show-Usage -ToError; exit 2 }
+    default { Stop-WithUsage "TYPE is apw or iso (got '$Mode')" }
 }
 $script:DebugOn = [bool]$Debug -or ($env:DEBUG -and $env:DEBUG -ne '0')
 $script:Link = if ($Link -match '://') { $Link } else { "https://$Link" }
@@ -249,6 +271,8 @@ $script:Tag = ''; $script:Asset = ''; $script:DefaultName = ''
 if ($script:Link -match '^[a-z]+://(www\.)?github\.com/') { From-Github $it }
 elseif ($script:Link -match '^[a-z]+://gitlab\.com/') { From-Gitlab $it }
 else { From-Static $it }
+# only GitHub marks pre-releases
+if ($it.manager -ne 'github' -and $script:Prerelease) { Say '⚠ -p only applies to GitHub releases, ignored' }
 
 $cfgName = if ($Name) { $Name } else { $script:DefaultName }
 if (-not $cfgName -or $cfgName -match '[/\\]') { Stop-WithError "can't make a cfg name from the link; pass NAME" }
@@ -278,6 +302,7 @@ switch ($it.manager) {
 }
 if ($it.repo_filename) { $pairs.repo_filename = $it.repo_filename }
 if ($it.repo_regex) { $pairs.repo_regex = $it.repo_regex }
+if ($it.allow_prereleases) { $pairs.allow_prereleases = $it.allow_prereleases }
 if ($it.checksum) { $pairs.checksum = $it.checksum }
 
 # several worlds may share a repo, so this is only a warning

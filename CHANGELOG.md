@@ -6,6 +6,13 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-11-06]
+
+### Changed
+- **make-update-cfg, windows/make-update-cfg.ps1:** The type is `-m`/`--mode TYPE` (`-Mode`), like update-tools, instead of the first argument; the link can be given as `-u`/`--url LINK` (`-Url`), with NAME then the only argument. New `-l`/`--latest` (`-Latest`, the default) takes the latest stable release and writes `allow_prereleases=false`, and `-p`/`--prerelease` (`-Prerelease`) takes the newest release, pre-releases included, and writes `allow_prereleases=true` (was: stable first, else a pre-release, with nothing written). Both are GitHub-only; `-p` on a GitLab or static link is ignored with a warning. A repo with only pre-releases now needs `-p`, and the error says so *(Claude, directed by user)*
+
+---
+
 ## [2026-11-04]
 
 ### Added

@@ -12,16 +12,20 @@ source "$SCRIPT_DIR/lib/load.sh" || exit 1
 # replaces update-tools' help, which set_mode prints after a bad type
 usage() {
     cat <<EOF
-Usage: ${0##*/} [OPTIONS] TYPE LINK [NAME]
+Usage: ${0##*/} -m TYPE [OPTIONS] LINK [NAME]
+       ${0##*/} -m TYPE -u LINK [OPTIONS] [NAME]
 Write a cfg for a new AppImage, Archipelago world or ISO, read from LINK. The
 next update-tools run installs it.
 
-TYPE: app (appimages), apw (apworlds) or iso (isos).
 LINK: a GitHub or GitLab project, or one of its release assets (to choose
       between several); any other URL is a fixed download (static).
 NAME: the cfg's name (default: from the repo or the file name).
 
 Options:
+  -m, --mode TYPE   app (appimages), apw (apworlds) or iso (isos); required
+  -u, --url LINK    the link, instead of as the first argument
+  -l, --latest      the latest stable release (the default; GitHub)
+  -p, --prerelease  the newest release, pre-releases included (GitHub)
   -r, --root DIR    the item folder (default: the mode's, as in update-tools)
   -d, --debug       explain each decision (or DEBUG=1)
   -h, --help        show this help
@@ -29,6 +33,8 @@ EOF
 }
 
 die() { echo "${0##*/}: $*" >&2; exit 1; }
+# a usage error: the message, then the help
+bad() { echo "${0##*/}: $*" >&2; usage >&2; exit 2; }
 
 # A cfg name from a file or repo name: no extension, arch or version, lowercase,
 # and _ for anything but letters, digits, - and _.
@@ -52,16 +58,16 @@ asset_patterns() {
 }
 
 # "TAG<tab>NAME<tab>NAME…" for the newest release with an asset matching $2:
-# stable first, like allow_prereleases=auto. $1 = the release list, $3 = the
-# jq path to a release's asset names (GitHub and GitLab differ).
+# stable only, or any with -p (prerelease=true). $1 = the release list, $3 =
+# the jq path to a release's asset names (GitHub and GitLab differ).
 release_assets() {
-    jq -r --arg pat "$2" "
+    jq -r --arg pat "$2" --argjson pre "$prerelease" "
         if type != \"array\" then empty else
             [ .[] | select((.draft // false) | not)
               | { tag: .tag_name, pre: (.prerelease // false),
                   names: [ $3 | select(test(\$pat; \"i\")) ] }
               | select(.names | length > 0) ]
-            | (map(select(.pre | not))[0] // .[0]) // empty
+            | (if \$pre then .[0] else map(select(.pre | not))[0] end) // empty
             | [.tag] + .names | @tsv
         end" <<<"$1" 2>/dev/null
 }
@@ -76,7 +82,10 @@ choose_asset() {
         found=$(release_assets "$1" "$pat" "$2")
         [[ -n "$found" ]] && break
     done < <(asset_patterns)
-    [[ -n "$found" ]] || die "no release has a .$ITEM_EXT asset (or an archive) to install"
+    if [[ -z "$found" ]]; then
+        [[ "$prerelease" == true ]] && die "no release has a .$ITEM_EXT asset (or an archive) to install"
+        die "no stable release has a .$ITEM_EXT asset (or an archive) to install; -p takes pre-releases too"
+    fi
     IFS=$'\t' read -ra names <<<"$found"
     tag="${names[0]}"; names=("${names[@]:1}")
     debug "release $tag has ${#names[@]} candidate(s): ${names[*]}"
@@ -158,7 +167,7 @@ from_github() {
     # the same URL resolve_latest_asset asks for, so its check comes from the cache
     github_releases "$api_url" || exit 1
     choose_asset "$release_json" '.assets[].name'
-    manager=github
+    manager=github allow_prereleases="$prerelease"
     asset_pattern '.assets[].name'
     default_name=$(clean_name "${repo#*/}")
 }
@@ -215,30 +224,50 @@ find_checksum() {
 
 make_cfg() {
     local -a args=() pairs=()
-    local link name default_name cfg owner project tag asset wanted="" other
-    local ROOT_ARG=""
+    local link="" name name_arg default_name cfg owner project tag asset wanted="" other
+    local ROOT_ARG="" type_arg="" prerelease="" given
     while (( $# )); do
         case "$1" in
+            -m|--mode)
+                [[ -n "${2:-}" ]] || bad "$1 needs a type"
+                type_arg="$2"; shift ;;
+            --mode=*)
+                type_arg="${1#--mode=}"
+                [[ -n "$type_arg" ]] || bad "--mode needs a type" ;;
+            -u|--url)
+                [[ -n "${2:-}" ]] || bad "$1 needs a link"
+                link="$2"; shift ;;
+            --url=*)
+                link="${1#--url=}"
+                [[ -n "$link" ]] || bad "--url needs a link" ;;
+            -l|--latest|-p|--prerelease)
+                given=false; [[ "$1" == -p || "$1" == --prerelease ]] && given=true
+                [[ -n "$prerelease" && "$prerelease" != "$given" ]] && bad "-l and -p can't be used together"
+                prerelease="$given" ;;
             -r|--root)
-                [[ -n "${2:-}" ]] || { echo "${0##*/}: $1 needs a folder" >&2; usage >&2; exit 2; }
+                [[ -n "${2:-}" ]] || bad "$1 needs a folder"
                 ROOT_ARG="$2"; shift ;;
             --root=*)
                 ROOT_ARG="${1#--root=}"
-                [[ -n "$ROOT_ARG" ]] || { echo "${0##*/}: --root needs a folder" >&2; usage >&2; exit 2; } ;;
+                [[ -n "$ROOT_ARG" ]] || bad "--root needs a folder" ;;
             -d|--debug) DEBUG=1 ;;
             -h|--help)  usage; exit 0 ;;
-            -*)         echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+            -*)         bad "unknown option '$1'" ;;
             *)          args+=("$1") ;;
         esac
         shift
     done
-    if (( ${#args[@]} < 2 || ${#args[@]} > 3 )); then
-        (( ${#args[@]} )) || { usage; exit 0; }
-        echo "${0##*/}: need TYPE and LINK" >&2; usage >&2; exit 2
+    (( ${#args[@]} )) || [[ -n "$type_arg$link" ]] || { usage; exit 0; }
+    [[ -n "$type_arg" ]] || bad "need -m TYPE"
+    if [[ -z "$link" ]]; then
+        (( ${#args[@]} )) || bad "need a LINK"
+        link="${args[0]}"; args=("${args[@]:1}")
     fi
-    set_mode "${args[0]}"
-    [[ "$MODE" == all ]] && { echo "${0##*/}: TYPE is app, apw or iso" >&2; usage >&2; exit 2; }
-    link="${args[1]}"
+    (( ${#args[@]} <= 1 )) || bad "too many arguments: ${args[*]}"
+    name_arg="${args[0]:-}"
+    set_mode "$type_arg"
+    [[ "$MODE" == all ]] && bad "TYPE is app, apw or iso"
+    prerelease="${prerelease:-false}"
     [[ "$link" == *://* ]] || link="https://$link"
 
     ITEM_TYPE="$MODE"
@@ -262,8 +291,10 @@ make_cfg() {
         *://gitlab.com/*)                      from_gitlab ;;
         *)                                     from_static ;;
     esac
+    # only GitHub marks pre-releases
+    [[ "$manager" != github && "$prerelease" == true ]] && say "⚠ -p only applies to GitHub releases, ignored"
 
-    name="${args[2]:-$default_name}"
+    name="${name_arg:-$default_name}"
     [[ -n "$name" && "$name" != */* ]] || die "can't make a cfg name from the link; pass NAME"
     cfg="$CFG_DIR/$name.$ITEM_EXT.cfg"
     [[ -e "$cfg" ]] && die "${cfg/#"$HOME"/\~} already exists"
@@ -290,6 +321,7 @@ make_cfg() {
     esac
     [[ -n "${repo_filename:-}" ]] && pairs+=("repo_filename=$repo_filename")
     [[ -n "${repo_regex:-}" ]] && pairs+=("repo_regex=$repo_regex")
+    [[ -n "${allow_prereleases:-}" ]] && pairs+=("allow_prereleases=$allow_prereleases")
     [[ -n "${checksum:-}" ]] && pairs+=("checksum=$checksum")
 
     # several worlds may share a repo, so this is only a warning
