@@ -97,10 +97,15 @@ generate_desktop_entry() {
         [[ -z "$(icon_exists "$ICONS_DIR" "$icon")" ]] && say "  ⚠ No icon found for $name"
     fi
 
+    # Exec splits on spaces unless quoted (an install_name may have them)
+    local exec_file="$appimage_file" sed_file sed_exec
+    [[ "$exec_file" =~ [^A-Za-z0-9._/+-] ]] && exec_file="\"$exec_file\""
+    sed_file="${appimage_file//&/\\&}"; sed_file="${sed_file//|/\\|}"
+    sed_exec="${exec_file//&/\\&}"; sed_exec="${sed_exec//|/\\|}"
     if [[ -n "$embedded_desktop" ]]; then
         sed -e "s|^Icon=.*|Icon=$icon|" \
-            -e "s|^TryExec=.*|TryExec=$appimage_file|" \
-            -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $appimage_file %f|" \
+            -e "s|^TryExec=.*|TryExec=$sed_file|" \
+            -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $sed_exec %f|" \
             "$embedded_desktop" > "$desktop_dest"
         status "󰴚 desktop entry built from embedded metadata"
     else
@@ -110,7 +115,7 @@ Type=Application
 Name=$name
 Icon=$icon
 TryExec=$appimage_file
-Exec=env DESKTOPINTEGRATION=1 $appimage_file %f
+Exec=env DESKTOPINTEGRATION=1 $exec_file %f
 Categories=Utility;
 X-AppImage-Name=$name
 EOF
@@ -120,8 +125,46 @@ EOF
     DESKTOP_TMP=""
 }
 
+ITEM_LOCALS=(install_as)
+
+# Optional install_name: the app is installed under that name instead of its
+# upstream one ({name} is the cfg name; .AppImage is added when missing). An
+# app already installed under another name is renamed now, so the change
+# applies without waiting for an update.
+item_setup() {
+    install_as=""
+    [[ -z "${install_name:-}" ]] && return 0
+    install_as="${install_name//\{name\}/$name}"
+    # a path, or what the desktop entry's Exec line can't take plainly
+    if [[ "$install_as" == */* || "$install_as" == . || "$install_as" == .. \
+          || "$install_as" == *[\"\`\$\\%]* ]]; then
+        say "⚠ $name: install_name must be a file name, not '$install_name', skipping"
+        return 1
+    fi
+    [[ "${install_as,,}" == *.appimage ]] || install_as+=".AppImage"
+    debug "install_name: $install_as"
+
+    local old_path; old_path=$(find_installed "$dir")
+    [[ -z "$old_path" || "$installed_file" == "$install_as" || "$check_only" == true ]] && return 0
+    if [[ -e "$dir/$install_as" ]]; then
+        say "⚠ $name: $install_as already exists, not renaming $installed_file"
+        return 0
+    fi
+    if ! mv -f "$old_path" "$dir/$install_as"; then
+        say "  ✗ $name: could not rename $installed_file to $install_as"
+        return 0
+    fi
+    say "  ✓ $name: renamed $installed_file to $install_as"
+    installed_file="$install_as"
+    update_cfg "$cfg_file" "installed_file=$installed_file"
+    # the entry's Exec and TryExec name the file
+    generate_desktop_entry "$name" "$dir/$install_as"
+    return 0
+}
+
 # Archived AppImages: extract, then install the AppImage inside (new_file, under
-# its own name). A plain AppImage keeps the defaults.
+# its own name). A plain AppImage keeps the defaults. install_name replaces
+# either name.
 item_validate() {
     tmp_extract_dir=""
     case "$asset_name" in
@@ -142,6 +185,8 @@ item_validate() {
             candidate="${new_file##*/}"
             ;;
     esac
+    [[ -n "$install_as" ]] && candidate="$install_as"
+    return 0
 }
 
 item_extras() {

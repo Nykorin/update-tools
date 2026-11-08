@@ -6,6 +6,14 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-11-07]
+
+### Added
+- **lib/appimages.sh, lib/cfg.sh:** An optional `install_name` key for AppImages: the app is installed under that name instead of its upstream one (`install_name=PopTracker.AppImage`; `{name}` is the cfg name, so `install_name={name}` brings back the old `NAME.AppImage` naming; `.AppImage` is added when the name lacks it). An app already installed under another name is renamed on its next run (not with `-c`), with `✓ NAME: renamed OLD to NEW`, and its desktop entry rebuilt; a file already at the new name is left alone with a warning, and a path or a name with `"`, `` ` ``, `$`, `\` or `%` skips the app. Without the key, nothing changes. Removing it keeps the current name until the app's next update *(Claude, directed by user)*
+
+### Fixed
+- **lib/appimages.sh:** A desktop entry's `Exec` line didn't quote the AppImage's path, so a path with a space was split into two arguments; it's quoted now when needed, and `&` or `|` in the path no longer break the `sed` that writes the entry *(Claude)*
+
 ## [2026-11-06]
 
 ### Added

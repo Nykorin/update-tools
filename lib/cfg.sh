@@ -8,7 +8,7 @@ CFG_KEYS=(
     manager repo repo_filename repo_regex allow_prereleases repo_url
     feed_url channel arch_key download_base url
     content_length last_modified current_version
-    apworld_filename icon_name installed_file last_checked
+    apworld_filename icon_name install_name installed_file last_checked
     asset_digest etag
     checksum checksum_save download_suffix probe_days
     folder iso_hash checksum_file
