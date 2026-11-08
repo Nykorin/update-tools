@@ -32,12 +32,13 @@ function Report-UpToDate($it) {
 # with the mode's hooks where they differ. Returns 2 to stop the whole run.
 function Invoke-Item([string]$CfgFile, [int]$Index, [int]$Count) {
     $name = [IO.Path]::GetFileName($CfgFile)
-    $name = $name.Substring(0, $name.Length - ".$($script:Ext).cfg".Length)
+    $name = $name.Substring(0, $name.Length - '.json'.Length)
     $script:Label = $name
     $script:Done = $Index
     Status ''
 
-    $it = Read-Cfg $CfgFile
+    $it = Read-Item $CfgFile
+    if ($null -eq $it) { return 0 }
     $it.name = $name; $it.cfg_file = $CfgFile; $it.dir = $script:Dir
     Debug-Line "cfg: manager=$(if ($it.manager) { $it.manager } else { '?' }) version=$(if ($it.current_version) { $it.current_version } else { 'none' }) installed_file=$(if ($it.installed_file) { $it.installed_file } else { 'none' }) last_checked=$(if ($it.last_checked) { $it.last_checked } else { 'never' })"
     if (-not (Invoke-Hook 'Setup' $it)) { return 0 }
@@ -160,9 +161,13 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
     $script:Staged = ''
     [void](Invoke-Hook 'PrepareDir' $null)
 
-    $cfgs = @(Get-ChildItem -LiteralPath $cfgDir -File -Filter "*.$($s.Ext).cfg" | Sort-Object Name | ForEach-Object { $_.FullName })
+    # -Filter would also match *.jsonX on Windows
+    $cfgs = @(Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like '*.json' } | Sort-Object Name | ForEach-Object { $_.FullName })
+    # cfgs from before 2026-11-07 aren't read any more
+    $old = @(Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like "*.$($s.Ext).cfg" })
+    if ($old.Count) { Say "⚠ $($old.Count) old *.$($s.Ext).cfg file(s) in $cfgDir are ignored: cfgs are NAME.json now" }
     if ($cfgs.Count -eq 0) {
-        Say "⚠ no *.$($s.Ext).cfg files in $cfgDir, nothing to do"
+        Say "⚠ no *.json files in $cfgDir, nothing to do"
         return $true
     }
     Start-Progress $s.Title $cfgs.Count

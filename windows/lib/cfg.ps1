@@ -1,67 +1,210 @@
-# cfg.ps1: reading and saving the cfg files, and the paths file. Loaded by
-# update-tools.ps1.
+# cfg.ps1: reading and saving the item cfgs (JSON), and the settings file.
+# Loaded by update-tools.ps1.
 
-# Every key a cfg may hold; the same keys as the bash version, so a cfg works
-# in either. Read-Cfg returns only these: a cfg is data, never code.
-$script:CfgKeys = @(
+# Each item's cfg is .cfg\NAME.json, as in the bash version: your keys at the
+# top level, the ones the scripts write under "state", and an optional
+# "comment" the scripts ignore. Values are text (numbers and true/false are
+# read as text too). Read-Item returns only the keys below: a cfg is data,
+# never code.
+$script:ItemKeys = @(
     'manager', 'repo', 'repo_filename', 'repo_regex', 'allow_prereleases', 'repo_url',
     'feed_url', 'channel', 'arch_key', 'download_base', 'url',
-    'content_length', 'last_modified', 'current_version',
-    'apworld_filename', 'installed_file', 'last_checked',
-    'asset_digest', 'etag',
-    'checksum', 'checksum_save', 'download_suffix', 'probe_days',
-    'folder', 'iso_hash', 'checksum_file'
+    'apworld_filename', 'icon_name', 'install_name',
+    'checksum', 'checksum_save', 'download_suffix', 'probe_days', 'folder'
 )
-
 # Keys the scripts keep up to date themselves, in the order new ones are added.
 $script:SaveKeys = @('current_version', 'last_checked', 'content_length', 'last_modified',
                      'asset_digest', 'etag', 'installed_file', 'iso_hash', 'checksum_file')
 
-# The cfg's KEY=VALUE lines as a hashtable. $Keys = the keys allowed (default:
-# CfgKeys); others are reported and ignored. Blank lines and # comments are
-# skipped, a value in double quotes loses them, and Windows line endings are fine.
-function Read-Cfg([string]$Path, [string[]]$Keys = $script:CfgKeys) {
-    $cfg = @{}
-    foreach ($line in [IO.File]::ReadAllLines($Path)) {
-        $line = $line.TrimEnd("`r")
-        if ($line -match '^\s*(#|$)') { continue }
-        if ($line -notmatch '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { continue }
-        $key = $Matches[1]; $value = $Matches[2]
-        if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
-            $value = $value.Substring(1, $value.Length - 2).Replace('\"', '"')
-        }
-        if ($Keys -ccontains $key) {
-            $cfg[$key] = $value
-        } else {
-            Say "⚠ $($script:Label): unknown key '$key' in $(Split-Path -Leaf $Path), ignored"
-        }
+# An ordered dictionary with case-sensitive keys, as JSON's are.
+function New-JsonObject { ,[Collections.Specialized.OrderedDictionary]::new([StringComparer]::Ordinal) }
+
+# JSON text as ordered dictionaries, lists, strings, numbers, booleans and
+# $null. PowerShell 7's ConvertFrom-Json turns text that looks like a date into
+# a DateTime, so 7 parses with System.Text.Json; 5.1's leaves text alone.
+function ConvertFrom-JsonText([string]$Text) {
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        $doc = [System.Text.Json.JsonDocument]::Parse($Text)
+        try { return ,(ConvertFrom-JsonElement $doc.RootElement) } finally { $doc.Dispose() }
     }
-    $cfg
+    $o = ConvertFrom-Json $Text
+    ,(ConvertFrom-JsonObject $o)
 }
 
-# Sets each KEY=VALUE pair in the cfg: an existing key's line is replaced, a
-# new one appended. Values with spaces or quotes are quoted. The file keeps its
-# line endings and is written as UTF-8 without a byte-order mark.
-function Write-CfgValues([string]$Path, [System.Collections.Specialized.OrderedDictionary]$Pairs) {
-    $text = [IO.File]::ReadAllText($Path)
-    $nl = if ($text.Contains("`r`n")) { "`r`n" } else { "`n" }
-    $lines = [Collections.Generic.List[string]]::new()
-    if ($text.Length) {
-        foreach ($l in ($text -split "`r?`n")) { $lines.Add($l) }
-        # the split leaves an empty last line for a file that ends in a newline
-        if ($lines[$lines.Count - 1] -eq '') { $lines.RemoveAt($lines.Count - 1) }
-    }
-    foreach ($key in $Pairs.Keys) {
-        $value = [string]$Pairs[$key]
-        if ($value -match '[\s"]') { $value = '"' + $value.Replace('"', '\"') + '"' }
-        $line = "$key=$value"
-        $at = -1
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i].StartsWith("$key=")) { $at = $i; break }
+function ConvertFrom-JsonElement($e) {
+    switch ($e.ValueKind.ToString()) {
+        'Object' {
+            $d = New-JsonObject
+            foreach ($p in $e.EnumerateObject()) { $d[$p.Name] = ConvertFrom-JsonElement $p.Value }
+            return ,$d
         }
-        if ($at -ge 0) { $lines[$at] = $line } else { $lines.Add($line) }
+        'Array' {
+            $l = [Collections.Generic.List[object]]::new()
+            foreach ($x in $e.EnumerateArray()) { $l.Add((ConvertFrom-JsonElement $x)) }
+            return ,$l
+        }
+        'String' { return $e.GetString() }
+        'Number' {
+            $n = [long]0
+            if ($e.TryGetInt64([ref]$n)) { return $n }
+            return $e.GetDouble()
+        }
+        'True'   { return $true }
+        'False'  { return $false }
+        default  { return $null }
     }
-    [IO.File]::WriteAllText($Path, ($lines -join $nl) + $nl, [Text.UTF8Encoding]::new($false))
+}
+
+function ConvertFrom-JsonObject($o) {
+    if ($null -eq $o) { return $null }
+    if ($o -is [Management.Automation.PSCustomObject]) {
+        $d = New-JsonObject
+        foreach ($p in $o.PSObject.Properties) { $d[$p.Name] = ConvertFrom-JsonObject $p.Value }
+        return ,$d
+    }
+    if ($o -is [Array]) {
+        $l = [Collections.Generic.List[object]]::new()
+        foreach ($x in $o) { $l.Add((ConvertFrom-JsonObject $x)) }
+        return ,$l
+    }
+    $o
+}
+
+# A string as jq writes it: " and \ escaped, control characters as \b \f \n
+# \r \t or \u00XX (DEL too), everything else as it is.
+function ConvertTo-JqString([string]$s) {
+    $sb = [Text.StringBuilder]::new('"')
+    foreach ($c in $s.ToCharArray()) {
+        $code = [int]$c
+        switch ($code) {
+            34 { [void]$sb.Append('\"') }
+            92 { [void]$sb.Append('\\') }
+            8  { [void]$sb.Append('\b') }
+            12 { [void]$sb.Append('\f') }
+            10 { [void]$sb.Append('\n') }
+            13 { [void]$sb.Append('\r') }
+            9  { [void]$sb.Append('\t') }
+            default {
+                if ($code -lt 32 -or $code -eq 127) { [void]$sb.Append(('\u{0:x4}' -f $code)) }
+                else { [void]$sb.Append($c) }
+            }
+        }
+    }
+    [void]$sb.Append('"')
+    $sb.ToString()
+}
+
+# A number or boolean as jq prints it, also what jq's tostring gives.
+function ConvertTo-JqScalar($v) {
+    if ($v -is [bool]) { if ($v) { return 'true' } else { return 'false' } }
+    if ($v -is [double] -or $v -is [single]) { return $v.ToString('R', [Globalization.CultureInfo]::InvariantCulture) }
+    [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0}', $v)
+}
+
+# A value as jq --indent 2 writes it, so either version can save a cfg the
+# other wrote without reformatting it.
+function ConvertTo-JqJson($v, [string]$Pad = '') {
+    if ($null -eq $v) { return 'null' }
+    if ($v -is [string]) { return ConvertTo-JqString $v }
+    $inner = $Pad + '  '
+    if ($v -is [Collections.IDictionary]) {
+        if ($v.Count -eq 0) { return '{}' }
+        $parts = foreach ($k in $v.Keys) { $inner + (ConvertTo-JqString $k) + ': ' + (ConvertTo-JqJson $v[$k] $inner) }
+        return "{`n" + ($parts -join ",`n") + "`n$Pad}"
+    }
+    if ($v -is [Collections.IList]) {
+        if ($v.Count -eq 0) { return '[]' }
+        $parts = foreach ($x in $v) { $inner + (ConvertTo-JqJson $x $inner) }
+        return "[`n" + ($parts -join ",`n") + "`n$Pad]"
+    }
+    ConvertTo-JqScalar $v
+}
+
+# Writes a JSON tree to $Path: to a hidden temp file next to it, then over it,
+# so a cut-off write never leaves half a cfg. UTF-8 without a byte-order mark,
+# ending in a newline, as jq writes it.
+function Write-JsonFile([string]$Path, $Tree) {
+    $tmp = Join-Path (Split-Path -Parent $Path) ".$(Split-Path -Leaf $Path).tmp"
+    [IO.File]::WriteAllText($tmp, (ConvertTo-JqJson $Tree) + "`n", [Text.UTF8Encoding]::new($false))
+    if (Test-Path -LiteralPath $Path) {
+        # ReplaceFile can fail on some file systems; a copy still writes it whole
+        try { [IO.File]::Replace($tmp, $Path, $null) }
+        catch { [IO.File]::Copy($tmp, $Path, $true); Remove-Item -LiteralPath $tmp -Force }
+    } else {
+        [IO.File]::Move($tmp, $Path)
+    }
+}
+
+# One value of a cfg into the item: unset when null, refused when it's a list
+# or object, reported when the key isn't one of $Keys.
+function Set-ItemValue($it, [string]$Key, $Value, [string]$Prefix, [string[]]$Keys, [string]$Leaf) {
+    if ($null -eq $Value) { return }
+    if ($Value -is [Collections.IDictionary] -or $Value -is [Collections.IList]) {
+        Say "⚠ $($script:Label): '$Key' in $Leaf must be text, ignored"; return
+    }
+    if ($Keys -cnotcontains $Key) { Say "⚠ $($script:Label): unknown key '$Prefix$Key' in $Leaf, ignored"; return }
+    $it[$Key] = if ($Value -is [string]) { $Value } else { ConvertTo-JqScalar $Value }
+}
+
+# The item's keys from its JSON as a hashtable, or $null (having said why)
+# when the file isn't a valid JSON object.
+function Read-Item([string]$Path) {
+    $leaf = Split-Path -Leaf $Path
+    $why = ''
+    $tree = $null
+    try {
+        $text = [IO.File]::ReadAllText($Path)
+        if ($text.Trim().Length -eq 0) { $why = 'empty file' }
+        else { $tree = ConvertFrom-JsonText $text }
+    } catch {
+        # the parser's own reason, not PowerShell's "Exception calling Parse"
+        $ex = $_.Exception
+        while ($ex.InnerException) { $ex = $ex.InnerException }
+        $why = ($ex.Message -split "`r?`n")[0]
+    }
+    if (-not $why -and -not ($tree -is [Collections.IDictionary])) { $why = 'not a JSON object' }
+    if ($why) {
+        Say "⚠ $($script:Label): $leaf isn't a valid cfg ($why), skipping"
+        return $null
+    }
+    $it = @{}
+    foreach ($k in @($tree.Keys)) {
+        if ($k -ceq 'state' -or $k -ceq 'comment') { continue }
+        Set-ItemValue $it $k $tree[$k] '' $script:ItemKeys $leaf
+    }
+    $st = $tree['state']
+    if ($null -ne $st) {
+        if ($st -is [Collections.IDictionary]) {
+            foreach ($k in @($st.Keys)) { Set-ItemValue $it $k $st[$k] 'state.' $script:SaveKeys $leaf }
+        } else {
+            Say "⚠ $($script:Label): 'state' in $leaf isn't an object, ignored"
+        }
+    }
+    $it
+}
+
+# Sets each pair under the item's "state", keeping everything else (and the
+# order of the keys already there); content_length is saved as a number.
+function Save-State([string]$Path, [System.Collections.Specialized.OrderedDictionary]$Pairs) {
+    try {
+        $tree = ConvertFrom-JsonText ([IO.File]::ReadAllText($Path))
+        if (-not ($tree -is [Collections.IDictionary])) { throw 'not a JSON object' }
+        $st = $tree['state']
+        if ($null -eq $st) { $st = New-JsonObject; $tree['state'] = $st }
+        elseif (-not ($st -is [Collections.IDictionary])) { throw "'state' isn't an object" }
+        foreach ($k in $Pairs.Keys) {
+            $v = $Pairs[$k]
+            $n = [long]0
+            if ($k -ceq 'content_length' -and [long]::TryParse([string]$v, [ref]$n)) { $v = $n }
+            $st[$k] = $v
+        }
+        Write-JsonFile $Path $tree
+        $true
+    } catch {
+        Remove-IfThere (Join-Path (Split-Path -Parent $Path) ".$(Split-Path -Leaf $Path).tmp")
+        Say "  ✗ $($script:Label): could not save $(Split-Path -Leaf $Path)"
+        $false
+    }
 }
 
 # Saves the item's state after a successful check or install; never after a
@@ -79,9 +222,32 @@ function Save-UpdateMetadata($it) {
             'etag'            { $it.remote_etag }
             default           { $it[$key] }
         }
-        if (-not [string]::IsNullOrEmpty([string]$value)) { $pairs[$key] = $value }
+        if (-not [string]::IsNullOrEmpty([string]$value)) { $pairs[$key] = [string]$value }
     }
-    Write-CfgValues $it.cfg_file $pairs
+    [void](Save-State $it.cfg_file $pairs)
+}
+
+# The settings file's KEY=VALUE lines as a hashtable (the item cfgs were these
+# too until 2026-11-07). $Keys = the keys allowed; others are reported and
+# ignored. Blank lines and # comments are skipped, a value in double quotes
+# loses them, and Windows line endings are fine.
+function Read-Cfg([string]$Path, [string[]]$Keys) {
+    $cfg = @{}
+    foreach ($line in [IO.File]::ReadAllLines($Path)) {
+        $line = $line.TrimEnd("`r")
+        if ($line -match '^\s*(#|$)') { continue }
+        if ($line -notmatch '^([A-Za-z_][A-Za-z0-9_]*)=(.*)$') { continue }
+        $key = $Matches[1]; $value = $Matches[2]
+        if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
+            $value = $value.Substring(1, $value.Length - 2).Replace('\"', '"')
+        }
+        if ($Keys -ccontains $key) {
+            $cfg[$key] = $value
+        } else {
+            Say "⚠ $($script:Label): unknown key '$key' in $(Split-Path -Leaf $Path), ignored"
+        }
+    }
+    $cfg
 }
 
 # True if every named key is set; otherwise says which are missing.

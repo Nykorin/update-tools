@@ -203,7 +203,7 @@ function From-Static($it) {
     }
     # a version in the link itself means it never points at a newer release
     if ($given -match '[0-9]+\.[0-9]+|[0-9]{6,}') {
-        Say "⚠ $given names one release: a static cfg only sees that file change. For newer releases, use a link without the version, or manager=dirlist with * in place of it"
+        Say "⚠ $given names one release: a static cfg only sees that file change. For newer releases, use a link without the version, or `"manager`": `"dirlist`" with * in place of it"
     }
     $it.manager = 'static'; $it.url = $script:Link
     $script:DefaultName = Get-CleanName $it.asset_name
@@ -276,7 +276,7 @@ if ($it.manager -ne 'github' -and $script:Prerelease) { Say '⚠ -p only applies
 
 $cfgName = if ($Name) { $Name } else { $script:DefaultName }
 if (-not $cfgName -or $cfgName -match '[/\\]') { Stop-WithError "can't make a cfg name from the link; pass NAME" }
-$cfg = Join-Path $cfgDir "$cfgName.$($s.Ext).cfg"
+$cfg = Join-Path $cfgDir "$cfgName.json"
 if (Test-Path -LiteralPath $cfg) { Stop-WithError "$(Format-Path $cfg) already exists" }
 $script:Label = $cfgName
 $it.name = $cfgName
@@ -291,7 +291,7 @@ if ($script:Asset -and $it.asset_name -ne $script:Asset) {
 $pairs = [ordered]@{}
 if ($script:Type -eq 'iso') {
     Find-ChecksumFile $it
-    if (-not $it.checksum) { Say "⚠ $($cfgName): no checksum file found next to the ISO; add checksum= by hand (required)" }
+    if (-not $it.checksum) { Say "⚠ $($cfgName): no checksum file found next to the ISO; add `"checksum`" by hand (required)" }
     $pairs.folder = $cfgName
 }
 $pairs.manager = $it.manager
@@ -305,22 +305,30 @@ if ($it.repo_regex) { $pairs.repo_regex = $it.repo_regex }
 if ($it.allow_prereleases) { $pairs.allow_prereleases = $it.allow_prereleases }
 if ($it.checksum) { $pairs.checksum = $it.checksum }
 
-# several worlds may share a repo, so this is only a warning
+# several worlds may share a repo, so this is only a warning; a cfg that isn't
+# valid JSON is passed over
 $what = if ($it.url) { 'URL' } else { 'repo' }
-$lines = @(); if ($it.repo) { $lines += "repo=$($it.repo)" }; if ($it.repo_url) { $lines += "repo_url=$($it.repo_url)" }; if ($it.url) { $lines += "url=$($it.url)" }
 if (Test-Path -LiteralPath $cfgDir) {
-    foreach ($other in Get-ChildItem -LiteralPath $cfgDir -File -Filter "*.$($s.Ext).cfg") {
-        $content = [IO.File]::ReadAllLines($other.FullName) | ForEach-Object { $_.TrimEnd("`r") }
-        if ($lines | Where-Object { $content -ccontains $_ }) { Say "⚠ $($cfgName): $($other.Name) already uses this $what" }
+    foreach ($other in Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like '*.json' }) {
+        try { $o = ConvertFrom-JsonText ([IO.File]::ReadAllText($other.FullName)) } catch { continue }
+        if (-not ($o -is [Collections.IDictionary])) { continue }
+        $same = $false
+        foreach ($k in 'repo', 'repo_url', 'url') {
+            if ($it[$k] -and $o[$k] -is [string] -and $o[$k] -ceq $it[$k]) { $same = $true }
+        }
+        if ($same) { Say "⚠ $($cfgName): $($other.Name) already uses this $what" }
     }
 }
 
+# the link as the comment, then the keys in the order above
 [void](New-Item -ItemType Directory -Force -Path $cfgDir)
-[IO.File]::WriteAllText($cfg, "# $($script:Link)`n", [Text.UTF8Encoding]::new($false))
-Write-CfgValues $cfg $pairs
+$tree = New-JsonObject
+$tree['comment'] = $script:Link
+foreach ($k in $pairs.Keys) { $tree[$k] = [string]$pairs[$k] }
+Write-JsonFile $cfg $tree
 $tagShown = if ($script:Tag) { "$($script:Tag): " } else { '' }
 Say "✓ wrote $(Format-Path $cfg) ($tagShown$($it.asset_name)):"
 [IO.File]::ReadAllLines($cfg) | ForEach-Object { Say "    $_" }
-if ($script:Type -eq 'iso') { Say "  folder=$cfgName is a guess: set it to the ISO's folder under $(Format-Path $script:Dir)" }
+if ($script:Type -eq 'iso') { Say "  `"folder`": `"$cfgName`" is a guess: set it to the ISO's folder under $(Format-Path $script:Dir)" }
 Say "  update-tools.ps1 -m $($script:Type) -c shows the install; a run without -c does it"
 exit 0

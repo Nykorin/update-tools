@@ -28,13 +28,12 @@ function Show-Usage([switch]$ToError) {
     $skip = if ($script:SkipSeconds) { "on, skip_hours=${h}: items checked in the last $h h are skipped" } else { 'off: every item is checked on every run' }
     $text = @"
 Usage: update-tools.ps1 -m MODE [OPTIONS]
-Check and update Archipelago worlds and ISOs. Each item has a cfg
-(NAME.apworld.cfg or NAME.iso.cfg) in its folder's .cfg folder; one whose
-item isn't there yet is installed.
+Check and update Archipelago worlds and ISOs. Each item has a cfg (NAME.json)
+in its folder's .cfg folder; one whose item isn't there yet is installed.
 
 Modes:
   apw, apworlds     the Archipelago custom worlds
-  iso, isos         the ISOs on a Ventoy drive; each cfg's folder= names the
+  iso, isos         the ISOs on a Ventoy drive; each cfg's "folder" names the
                     ISO's folder, and every download is checksum-verified
                     before it replaces anything
   all               both in turn, skipping any that can't run
