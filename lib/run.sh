@@ -9,8 +9,8 @@ require_cmds() {
     local dep
     local -a deps=()
     case "$1" in
-        app|apw|iso) deps=(curl) ;;&
-        app|apw) deps+=(jq) ;;&
+        # jq reads every cfg (load_item)
+        app|apw|iso) deps=(curl jq) ;;&
         apw) deps+=(unzip) ;;
         iso) deps+=(sha256sum sha512sum) ;;
     esac
