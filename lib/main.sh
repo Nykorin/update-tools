@@ -93,14 +93,61 @@ report_up_to_date() {
     fi
     # the result line last, as after an update
     status_final "✓ up to date (${latest_tag:-$installed_file})"
+    ITEM_OUTCOME=current
 }
 
-# Walks every cfg; a function of its own so -d can time the whole run.
+# Walks every cfg; a function of its own so -d can time the whole run. Each
+# item's ITEM_OUTCOME (set by process_item when it ends well) is tallied for the
+# summary; an item that ends without one has said why it was skipped or failed.
 run_items() {
+    local rc updated=0 installed=0 current=0 recent=0 unchecked=0
+    local -a available=() problems=()
     for i in "${!cfg_files[@]}"; do
         commit_final
-        timed "" process_item "$i" || { (( $? == 2 )) && break; }
+        ITEM_OUTCOME=""
+        timed "" process_item "$i"; rc=$?
+        case "$ITEM_OUTCOME" in
+            updated)   (( ++updated )) ;;
+            installed) (( ++installed )) ;;
+            current)   (( ++current )) ;;
+            recent)    (( ++recent )) ;;
+            available) available+=("$name") ;;
+            *)         problems+=("$name") ;;
+        esac
+        if (( rc == 2 )); then
+            unchecked=$(( ${#cfg_files[@]} - i - 1 ))
+            break
+        fi
     done
+    commit_final
+    report_summary
+    return 0
+}
+
+# The mode's summary, after its last item: what went well in one line, then the
+# items that need a look, by name, so a long run's failures can't hide in the
+# scrollback. Reads run_items' tallies.
+report_summary() {
+    local line word
+    local -a parts=()
+    (( updated ))   && parts+=("$updated updated")
+    (( installed )) && parts+=("$installed installed")
+    (( current ))   && parts+=("$current up to date")
+    (( recent ))    && parts+=("$recent checked recently")
+    if (( ${#parts[@]} )); then
+        printf -v line '%s, ' "${parts[@]}"
+        say "✓ ${line%, }"
+    fi
+    if (( ${#available[@]} )); then
+        printf -v line '%s, ' "${available[@]}"
+        word=updates; (( ${#available[@]} == 1 )) && word=update
+        say "⬆ ${#available[@]} $word available: ${line%, }"
+    fi
+    if (( ${#problems[@]} )); then
+        printf -v line '%s, ' "${problems[@]}"
+        say "⚠ ${#problems[@]} skipped or failed: ${line%, }"
+    fi
+    (( unchecked )) && say "⚠ $unchecked not checked"
     return 0
 }
 
@@ -147,6 +194,7 @@ process_item() {
     # skip_checked and skip_hours in the settings file: once per 24 hours by default
     if [[ "$force" == false && -n "$installed_path" ]] && checked_recently; then
         status_final "✓ already checked $CHECKED_AGO ago (${current_version:-$installed_file})"
+        ITEM_OUTCOME=recent
         case "$ITEM_TYPE" in
             app) [[ "$check_only" == true ]] || ensure_desktop_entry "$name" "$installed_path" ;;
         esac
@@ -191,6 +239,7 @@ process_item() {
     # -c: report it, download and write nothing
     if [[ "$check_only" == true ]]; then
         status_final "⬆ update available: $(shown_version "$asset_name")"
+        ITEM_OUTCOME=available
         return 0
     fi
 
@@ -257,6 +306,9 @@ process_item() {
     installed_file="$new_name"
     save_update_metadata "$cfg_file"
     status_final "✓ updated to $(shown_version "$installed_file")"
+    # installed_path is still the old file's, empty on a first install
+    ITEM_OUTCOME="${installed_path:+updated}"
+    ITEM_OUTCOME="${ITEM_OUTCOME:-installed}"
 }
 
 # One mode, app, apw or iso. It runs in a subshell, so its exit 1 (folder or

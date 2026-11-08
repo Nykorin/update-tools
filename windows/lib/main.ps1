@@ -26,6 +26,25 @@ function Report-UpToDate($it) {
     if (-not $script:CheckOnly) { Save-UpdateMetadata $it }
     $shown = if ($it.latest_tag) { $it.latest_tag } else { $it.installed_file }
     Status-Final "✓ up to date ($shown)"
+    $script:Outcome = 'current'
+}
+
+# The mode's summary, after its last item: what went well in one line, then the
+# items that need a look, by name, so a long run's failures can't hide in the
+# scrollback. $T holds the tallies from Invoke-Mode.
+function Write-Summary($T) {
+    $parts = @()
+    if ($T.updated)   { $parts += "$($T.updated) updated" }
+    if ($T.installed) { $parts += "$($T.installed) installed" }
+    if ($T.current)   { $parts += "$($T.current) up to date" }
+    if ($T.recent)    { $parts += "$($T.recent) checked recently" }
+    if ($parts.Count) { Say "✓ $($parts -join ', ')" }
+    if ($T.available.Count) {
+        $word = if ($T.available.Count -eq 1) { 'update' } else { 'updates' }
+        Say "⬆ $($T.available.Count) $word available: $($T.available -join ', ')"
+    }
+    if ($T.problems.Count) { Say "⚠ $($T.problems.Count) skipped or failed: $($T.problems -join ', ')" }
+    if ($T.unchecked) { Say "⚠ $($T.unchecked) not checked" }
 }
 
 # One cfg: check it, and update it if needed. The same steps for every mode,
@@ -51,6 +70,7 @@ function Invoke-UpdateItem([string]$CfgFile, [int]$Index, [int]$Count) {
     if (-not $script:ForceAll -and $it.installed_path -and (Test-CheckedRecently $it)) {
         $shown = if ($it.current_version) { $it.current_version } else { $it.installed_file }
         Status-Final "✓ already checked $($it.checked_ago) ago ($shown)"
+        $script:Outcome = 'recent'
         return 0
     }
 
@@ -82,6 +102,7 @@ function Invoke-UpdateItem([string]$CfgFile, [int]$Index, [int]$Count) {
     # -Check: report it, download and write nothing
     if ($script:CheckOnly) {
         Status-Final "⬆ update available: $(Get-ShownVersion $it $it.asset_name)"
+        $script:Outcome = 'available'
         return 0
     }
 
@@ -133,6 +154,8 @@ function Invoke-UpdateItem([string]$CfgFile, [int]$Index, [int]$Count) {
     $it.installed_file = $newName
     Save-UpdateMetadata $it
     Status-Final "✓ updated to $(Get-ShownVersion $it $it.installed_file)"
+    # installed_path is still the old file's, empty on a first install
+    $script:Outcome = if ($it.installed_path) { 'updated' } else { 'installed' }
     0
 }
 
@@ -178,12 +201,24 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
     Start-Progress $s.Title $cfgs.Count
     $total = [Diagnostics.Stopwatch]::StartNew()
     try {
+        # each item's $script:Outcome (set when it ends well) is tallied for the
+        # summary; one that ends without it has said why it was skipped or failed
+        $tally = @{ updated = 0; installed = 0; current = 0; recent = 0; unchecked = 0
+                    available = [Collections.Generic.List[string]]::new()
+                    problems = [Collections.Generic.List[string]]::new() }
         for ($i = 0; $i -lt $cfgs.Count; $i++) {
             $watch = [Diagnostics.Stopwatch]::StartNew()
+            $script:Outcome = ''
             $rc = Invoke-UpdateItem $cfgs[$i] $i $cfgs.Count
             if ($script:DebugOn) { Say ("  · $($script:Label): took {0:N2}s" -f $watch.Elapsed.TotalSeconds) }
-            if ($rc -eq 2) { break }
+            switch ($script:Outcome) {
+                'available' { $tally.available.Add($script:Label) }
+                ''          { $tally.problems.Add($script:Label) }
+                default     { $tally[$script:Outcome]++ }
+            }
+            if ($rc -eq 2) { $tally.unchecked = $cfgs.Count - $i - 1; break }
         }
+        Write-Summary $tally
     } finally {
         # Ctrl+C included: no half-downloaded file stays, and an old version
         # set aside goes back unless the new one got in

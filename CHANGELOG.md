@@ -8,6 +8,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ## [2026-11-08]
 
+### Added
+- **all modes, lib/main.sh, windows/lib/main.ps1, README.md:** Each mode ends with a summary, so a failure in a long run (128 worlds) can't hide in the scrollback: `✓ 1 updated, 1 installed, 130 up to date, 5 checked recently`, then by name `⬆ 2 updates available: beta, newone` (with `-c`), `⚠ 3 skipped or failed: badjson, broken, nomanager`, and after a GitHub rate-limit stop `⚠ 8 not checked`. `process_item` records how an item ended (`ITEM_OUTCOME`; PowerShell: `$script:Outcome`); an item that ends without one has already said why it was skipped or failed. Lines with nothing to report are left out. *(Claude, directed by user)*
+
 ### Changed
 - **windows/lib/main.ps1:** The per-item function is `Invoke-UpdateItem` (was `Invoke-Item`, which hid PowerShell's own `Invoke-Item` cmdlet inside the scripts) *(Claude, directed by user)*
 - **lib/apworlds.sh, lib/appimages.sh, lib/isos.sh, lib/main.sh, lib/files.sh, windows/lib/isos.ps1, windows/lib/main.ps1, README.md:** Comments that still named `-m app`/`apw`/`iso`, the paths file and `folder=` now name the commands, the settings file and `"folder"`; `tar`'s `${tarz}` is quoted. No change in behaviour. A full `shellcheck -o all` and PSScriptAnalyzer pass found nothing else to fix: the remaining notes are style the code doesn't follow (`${var}` everywhere, approved PowerShell verbs) or deliberate (`Write-Host` for status text) *(Claude, directed by user)*
