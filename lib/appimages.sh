@@ -140,17 +140,24 @@ generate_desktop_entry() {
     [[ "$exec_file" =~ [^A-Za-z0-9._/+-] ]] && exec_file="\"$exec_file\""
     sed_file="${appimage_file//&/\\&}"; sed_file="${sed_file//|/\\|}"
     sed_exec="${exec_file//&/\\&}"; sed_exec="${sed_exec//|/\\|}"
+    # Written to a temp file and renamed into place, read-only: apps that write
+    # their own entry on every start (Beeper, Stability Matrix) open the file to
+    # write it, which a read-only file refuses, so the entry stays this one
+    # (both apps catch the error). The temp file is hidden and ends in .tmp, so
+    # no launcher reads it.
+    local entry_tmp="${desktop_dest%/*}/.${desktop_dest##*/}.tmp"
+    DESKTOP_ENTRY_TMP="$entry_tmp"
     if [[ -n "$own_entry" ]]; then
-        render_desktop_file "$name" "$appimage_file" > "$desktop_dest"
+        render_desktop_file "$name" "$appimage_file" > "$entry_tmp"
         status "󰴚 desktop entry written from ${sidecar##*/}"
     elif [[ -n "$embedded_desktop" ]]; then
         sed -e "s|^Icon=.*|Icon=$icon|" \
             -e "s|^TryExec=.*|TryExec=$sed_file|" \
             -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $sed_exec %f|" \
-            "$embedded_desktop" > "$desktop_dest"
+            "$embedded_desktop" > "$entry_tmp"
         status "󰴚 desktop entry built from embedded metadata"
     else
-        cat > "$desktop_dest" <<EOF
+        cat > "$entry_tmp" <<EOF
 [Desktop Entry]
 Type=Application
 Name=$name
@@ -162,6 +169,11 @@ X-AppImage-Name=$name
 EOF
         say "  ⚠ No embedded .desktop found, generated minimal entry for $name"
     fi
+    if ! { chmod 444 "$entry_tmp" && mv -f "$entry_tmp" "$desktop_dest"; }; then
+        say "  ✗ $name: could not write ${desktop_dest##*/}"
+        rm -f "$entry_tmp"
+    fi
+    DESKTOP_ENTRY_TMP=""
     rm -rf "$tmp_extract"
     DESKTOP_TMP=""
 }

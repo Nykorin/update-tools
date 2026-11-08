@@ -28,15 +28,16 @@ require_cmds() {
 
 # Staged files, global so the EXIT trap can remove them after a Ctrl+C (a
 # half-downloaded ISO is useless, and a hidden .part file is easy to forget).
-# Only AppImages extract, into tmp_extract_dir and DESKTOP_TMP.
-tmp_download="" tmp_extract_dir="" DESKTOP_TMP=""
+# Only AppImages extract, into tmp_extract_dir and DESKTOP_TMP, and write a
+# desktop entry through DESKTOP_ENTRY_TMP.
+tmp_download="" tmp_extract_dir="" DESKTOP_TMP="" DESKTOP_ENTRY_TMP=""
 
 # The EXIT trap: removes the GitHub headers file, curl_run's log, timed's files
 # and any staged download or extraction, and settles an old version still set
 # aside (back, unless the new one is in). rm -f ignores an empty name, so unset
 # ones need no check.
 cleanup() {
-    rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}" "$tmp_download"
+    rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}" "$tmp_download" "$DESKTOP_ENTRY_TMP"
     rm -rf "$tmp_extract_dir" "$DESKTOP_TMP"
     settle_previous
     # ISOs need tmp/ only during an update

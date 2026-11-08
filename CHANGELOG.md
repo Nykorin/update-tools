@@ -6,6 +6,11 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-11-08]
+
+### Changed
+- **lib/appimages.sh, lib/run.sh:** Desktop entries are written to a hidden temp file in `~/.local/share/applications/`, made read-only (444) and renamed into place. Beeper and Stability Matrix write their own entry on every start, under the same name as the updater's (`Beeper.desktop`, `stabilitymatrix-app.desktop`), by opening the file for writing; a read-only file refuses that, so the entry built from `db/NAME.desktop` stays, and both apps catch the error (their source: Beeper's `registerLinuxConfig`, Stability Matrix's `LinuxDesktopIntegration.CreateDesktopFile`). Tools that write a new file and rename it, like `desktop-file-install`, still replace an entry; the next run puts it back. The EXIT trap removes the temp file after a Ctrl+C. Editing an entry in `~/.local/share/applications/` by hand now needs a `chmod` first; `db/NAME.desktop` is the place for edits *(Claude, directed by user)*
+
 ## [2026-11-07]
 
 ### Added
