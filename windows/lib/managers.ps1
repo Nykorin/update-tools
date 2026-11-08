@@ -1,4 +1,4 @@
-# managers.ps1: the managers worlds and ISOs use (github, gitlab, static,
+﻿# managers.ps1: the managers worlds and ISOs use (github, gitlab, static,
 # dirlist, dateprobe) and the up-to-date test. Loaded by update-tools.ps1.
 
 # A shell glob as an anchored regex: * and ? are wildcards, [...] stays a

@@ -10,7 +10,7 @@
 # Each mode's settings, by ITEM_TYPE: ITEM_CMD (its command), ITEM_TITLE (its
 # heading when update-tools runs all three),
 # ITEM_EXT (its files' extension), ITEM_MODE (for installed files;
-# empty leaves the mode alone), DEFAULT_DIR (from the paths file; empty when it
+# empty leaves the mode alone), DEFAULT_DIR (from the settings file; empty when it
 # isn't set there) and DIR_KEY (its key in that file), and for the
 # folder-not-found error NOT_FOUND_HINT (may be empty) and ROOT_HINT (the -r
 # advice, left out under update-tools, which refuses -r).
@@ -109,7 +109,7 @@ run_items() {
 # has said why and skips the item. ITEM_LOCALS names the variables a module's
 # hooks share, made local to each item.
 ITEM_LOCALS=()
-item_setup()         { :; }   # after load_item (ISOs: folder= and checksum)
+item_setup()         { :; }   # after load_item (ISOs: "folder" and checksum)
 item_prepare_check() { :; }   # before is_up_to_date (ISOs: fetch the checksum)
 item_preflight()     { :; }   # before downloading (ISOs: free space)
 # the staged download: next to the items (same disk, not RAM-backed /tmp), so

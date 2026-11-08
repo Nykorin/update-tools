@@ -9,7 +9,12 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-11-08]
 
 ### Changed
+- **windows/lib/main.ps1:** The per-item function is `Invoke-UpdateItem` (was `Invoke-Item`, which hid PowerShell's own `Invoke-Item` cmdlet inside the scripts) *(Claude, directed by user)*
+- **lib/apworlds.sh, lib/appimages.sh, lib/isos.sh, lib/main.sh, lib/files.sh, windows/lib/isos.ps1, windows/lib/main.ps1, README.md:** Comments that still named `-m app`/`apw`/`iso`, the paths file and `folder=` now name the commands, the settings file and `"folder"`; `tar`'s `${tarz}` is quoted. No change in behaviour. A full `shellcheck -o all` and PSScriptAnalyzer pass found nothing else to fix: the remaining notes are style the code doesn't follow (`${var}` everywhere, approved PowerShell verbs) or deliberate (`Write-Host` for status text) *(Claude, directed by user)*
 - **lib/appimages.sh, lib/run.sh:** Desktop entries are written to a hidden temp file in `~/.local/share/applications/`, made read-only (444) and renamed into place. Beeper and Stability Matrix write their own entry on every start, under the same name as the updater's (`Beeper.desktop`, `stabilitymatrix-app.desktop`), by opening the file for writing; a read-only file refuses that, so the entry built from `db/NAME.desktop` stays, and both apps catch the error (their source: Beeper's `registerLinuxConfig`, Stability Matrix's `LinuxDesktopIntegration.CreateDesktopFile`). Tools that write a new file and rename it, like `desktop-file-install`, still replace an entry; the next run puts it back. The EXIT trap removes the temp file after a Ctrl+C. Editing an entry in `~/.local/share/applications/` by hand now needs a `chmod` first; `db/NAME.desktop` is the place for edits *(Claude, directed by user)*
+
+### Fixed
+- **windows/:** Every `.ps1` file now starts with a UTF-8 byte-order mark. Windows PowerShell 5.1 reads a script without one in the system's ANSI code page, where the `0x93` byte in `✓` (`E2 9C 93`) is a curly double quote that PowerShell accepts as a string delimiter, so the scripts would most likely not even have loaded in 5.1. PowerShell 7 reads them as before *(Claude)*
 
 ## [2026-11-07]
 

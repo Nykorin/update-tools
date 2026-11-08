@@ -1,9 +1,9 @@
 # shellcheck shell=bash disable=SC2154,SC2034
-# isos.sh: the ISO updater (checksums, free space, the folder= key): its
+# isos.sh: the ISO updater (checksums, free space, the "folder" key): its
 # prepare_dir, the process_item hooks it needs, and their helpers. main.sh loads
-# it for -m iso, in that mode's own subshell, so the function names don't clash
-# with the other modules. It reads (SC2154) and sets (SC2034) variables that
-# main.sh and the shared libraries own.
+# it for update-isos, in that mode's own subshell, so the function names don't
+# clash with the other modules. It reads (SC2154) and sets (SC2034) variables
+# that main.sh and the shared libraries own.
 
 # "<algo> <hash>" for file $2 in checksum text $1. Reads GNU lines
 # ("hash  name", "hash *name", "hash  ./name") and BSD lines
@@ -65,7 +65,7 @@ item_prepare_check() {
 
 ITEM_LOCALS=(sum_text sum_url algo want got size avail sum_name)
 
-# folder= is relative to the root, so -r still works; it may not leave it. Every
+# "folder" is relative to the root, so -r still works; it may not leave it. Every
 # ISO is verified, so checksum is required; the manager checks its own keys.
 item_setup() {
     debug "folder: ${folder:-none}"

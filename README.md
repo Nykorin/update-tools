@@ -192,7 +192,7 @@ lib/main.sh         the commands, the mode loop and the one process_item every m
 lib/managers.sh     github, gitlab, static, jsonfeed, dirlist, dateprobe
 lib/appimages.sh    AppImage hooks: archives, desktop entries, icons
 lib/apworlds.sh     world hooks: zip checks, release zips with several worlds
-lib/isos.sh         ISO hooks: checksums, free space, folder=
+lib/isos.sh         ISO hooks: checksums, free space, "folder"
 lib/…               config files, network, progress display, files, flags
 windows/            the PowerShell port for worlds and ISOs
 ```

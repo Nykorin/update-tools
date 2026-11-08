@@ -1,4 +1,4 @@
-<#
+﻿<#
 update-tools.ps1: checks and updates Archipelago worlds and the ISOs on a
 Ventoy drive, on Windows. The PowerShell port of the bash update-tools: the
 same cfg files and keys, the same managers and rules. Run without arguments

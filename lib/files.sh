@@ -27,10 +27,10 @@ extract() {
                 *.tar.bz2)      tarz=j ;;
             esac
             if [[ -z "$member" ]]; then
-                tar -x${tarz}f "$archive" -C "$dest"
+                tar -x"${tarz}"f "$archive" -C "$dest"
                 return
             fi
-            tar -x${tarz}Of "$archive" "$member" > "$dest"
+            tar -x"${tarz}"Of "$archive" "$member" > "$dest"
             ;;
         *)
             return 1

@@ -1,4 +1,4 @@
-# isos.ps1: the ISO hooks (checksums, free space, the folder= key). Every
+﻿# isos.ps1: the ISO hooks (checksums, free space, the "folder" key). Every
 # download is verified against the upstream checksum before it replaces
 # anything. Loaded by update-tools.ps1; used in -Mode iso.
 
@@ -37,7 +37,7 @@ function iso_PrepareDir {
     Remove-EmptyTree $script:TmpDir
 }
 
-# folder= is relative to the root, so -Root still works; it may not leave it.
+# "folder" is relative to the root, so -Root still works; it may not leave it.
 # Every ISO is verified, so checksum is required.
 function iso_Setup($it) {
     $folder = ([string]$it.folder).TrimEnd('/', '\')

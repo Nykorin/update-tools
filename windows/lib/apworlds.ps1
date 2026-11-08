@@ -1,4 +1,4 @@
-# apworlds.ps1: the Archipelago world hooks. A world is a zip; a release zip
+﻿# apworlds.ps1: the Archipelago world hooks. A world is a zip; a release zip
 # that bundles an .apworld with a mod's own files gives up just the .apworld.
 # Loaded by update-tools.ps1; used in -Mode apw.
 

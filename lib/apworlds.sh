@@ -1,9 +1,9 @@
 # shellcheck shell=bash disable=SC2154,SC2034
 # apworlds.sh: the Archipelago world updater (bundles): its prepare_dir, the
-# process_item hooks it needs, and their helpers. main.sh loads it for -m apw,
-# in that mode's own subshell, so the function names don't clash with the other
-# modules. It reads (SC2154) and sets (SC2034) variables that main.sh and the
-# shared libraries own.
+# process_item hooks it needs, and their helpers. main.sh loads it for
+# update-apworlds, in that mode's own subshell, so the function names don't
+# clash with the other modules. It reads (SC2154) and sets (SC2034) variables
+# that main.sh and the shared libraries own.
 
 unbundle_apworld() {
     local pattern="${apworld_filename:-*.apworld}"

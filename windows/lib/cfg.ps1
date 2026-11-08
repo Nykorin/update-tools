@@ -1,4 +1,4 @@
-# cfg.ps1: reading and saving the item cfgs (JSON), and the settings file.
+﻿# cfg.ps1: reading and saving the item cfgs (JSON), and the settings file.
 # Loaded by update-tools.ps1.
 
 # Each item's cfg is .update-tools\db\NAME.json in its folder, as in the bash

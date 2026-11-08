@@ -1,4 +1,4 @@
-# files.ps1: checksums, setting the old version aside, and choosing the
+﻿# files.ps1: checksums, setting the old version aside, and choosing the
 # install name. Loaded by update-tools.ps1.
 
 function Get-Hash([string]$Algo, [string]$Path) {

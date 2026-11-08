@@ -1,9 +1,9 @@
-# main.ps1: each mode's settings, the one Invoke-Item every mode shares, and
+﻿# main.ps1: each mode's settings, the one Invoke-UpdateItem every mode shares, and
 # the mode runner. The hooks where the modes differ are functions named
 # TYPE_HOOK in apworlds.ps1 and isos.ps1; a missing one does nothing.
 # Loaded by update-tools.ps1.
 
-# Each mode's settings: its title, cfg extension, key in the paths file, and
+# Each mode's settings: its title, cfg extension, key in the settings file, and
 # the hints for a missing folder.
 function Get-ModeSettings([string]$Type) {
     switch ($Type) {
@@ -30,7 +30,7 @@ function Report-UpToDate($it) {
 
 # One cfg: check it, and update it if needed. The same steps for every mode,
 # with the mode's hooks where they differ. Returns 2 to stop the whole run.
-function Invoke-Item([string]$CfgFile, [int]$Index, [int]$Count) {
+function Invoke-UpdateItem([string]$CfgFile, [int]$Index, [int]$Count) {
     $name = [IO.Path]::GetFileName($CfgFile)
     $name = $name.Substring(0, $name.Length - '.json'.Length)
     $script:Label = $name
@@ -180,7 +180,7 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
     try {
         for ($i = 0; $i -lt $cfgs.Count; $i++) {
             $watch = [Diagnostics.Stopwatch]::StartNew()
-            $rc = Invoke-Item $cfgs[$i] $i $cfgs.Count
+            $rc = Invoke-UpdateItem $cfgs[$i] $i $cfgs.Count
             if ($script:DebugOn) { Say ("  · $($script:Label): took {0:N2}s" -f $watch.Elapsed.TotalSeconds) }
             if ($rc -eq 2) { break }
         }

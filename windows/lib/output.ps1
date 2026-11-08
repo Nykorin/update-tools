@@ -1,4 +1,4 @@
-# output.ps1: what the user sees. Permanent lines go to standard output (so a
+﻿# output.ps1: what the user sees. Permanent lines go to standard output (so a
 # redirect captures them); the transient status and the progress bars use
 # PowerShell's own progress display. Loaded by update-tools.ps1.
 

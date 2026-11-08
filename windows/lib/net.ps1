@@ -1,4 +1,4 @@
-# net.ps1: HTTP requests and downloads, GitHub and GitLab release lists, the
+﻿# net.ps1: HTTP requests and downloads, GitHub and GitLab release lists, the
 # GitHub token and request budget. Loaded by update-tools.ps1.
 
 Add-Type -AssemblyName System.Net.Http

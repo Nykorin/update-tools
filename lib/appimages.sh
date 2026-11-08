@@ -1,9 +1,9 @@
 # shellcheck shell=bash disable=SC2154,SC2034
 # appimages.sh: the AppImage updater (archives, desktop entries and icons): its
 # prepare_dir, the process_item hooks it needs, and their helpers. main.sh loads
-# it for -m app, in that mode's own subshell, so the function names don't clash
-# with the other modules. It reads (SC2154) and sets (SC2034) variables that
-# main.sh and the shared libraries own.
+# it for update-appimages, in that mode's own subshell, so the function names
+# don't clash with the other modules. It reads (SC2154) and sets (SC2034)
+# variables that main.sh and the shared libraries own.
 
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 

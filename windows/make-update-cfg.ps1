@@ -1,4 +1,4 @@
-<#
+﻿<#
 make-update-cfg.ps1: writes a new world's or ISO's cfg from a link, for
 update-tools.ps1 to install on its next run. The PowerShell port of the bash
 make-update-cfg. Run without arguments for the help.
