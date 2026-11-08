@@ -274,7 +274,7 @@ make_cfg() {
     dir="${ROOT_ARG:-$DEFAULT_DIR}"; dir="${dir%/}"
     [[ -n "$dir" ]] || die "no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$SETTINGS_FILE"), or use -r DIR"
     [[ -d "$dir" ]] || die "$dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}"
-    CFG_DIR="$dir/.cfg"
+    CFG_DIR="$dir/.update-tools/db"
     require_cmds "$ITEM_TYPE"
     command -v jq &>/dev/null || die "required command not found: jq"
     [[ "$ITEM_TYPE" == iso ]] && load_module

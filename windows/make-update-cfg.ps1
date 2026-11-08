@@ -264,7 +264,7 @@ if ($dir -match '^[A-Za-z]:$') { $dir += '\' }
 if (-not (Test-Path -LiteralPath $dir -PathType Container)) { Stop-WithError "$dir not found. $($s.NotFoundHint)" }
 $script:Dir = (Resolve-Path -LiteralPath $dir).ProviderPath
 $script:IsoDir = $script:Dir
-$cfgDir = Join-Path $script:Dir '.cfg'
+$cfgDir = Join-Path (Join-Path $script:Dir '.update-tools') 'db'
 
 $it = @{}
 $script:Tag = ''; $script:Asset = ''; $script:DefaultName = ''

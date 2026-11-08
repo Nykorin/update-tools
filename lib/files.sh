@@ -46,8 +46,8 @@ hash_file() {
 }
 
 # ---------------------------------------------------------------------------
-# The old version during an install: renamed into TMP_DIR (always ROOT/.tmp, on
-# the same disk) right before the new one goes in, deleted once it's in place,
+# The old version during an install: renamed into TMP_DIR (always
+# ROOT/.update-tools/tmp, on the same disk) right before the new one goes in, deleted once it's in place,
 # renamed back if the install fails or the run is interrupted. It keeps its
 # path below the root and gets a .previous suffix, which never ends in .iso, so
 # Ventoy can't list it.
@@ -60,7 +60,7 @@ ASIDE=()
 INSTALL_TARGET=""
 
 previous_path() {
-    printf '%s\n' "$TMP_DIR/${1#"${TMP_DIR%/*}/"}.previous"
+    printf '%s\n' "$TMP_DIR/${1#"$ROOT_DIR/"}.previous"
 }
 
 # Moves each existing FILE aside (empty and missing ones are skipped). On a
@@ -139,7 +139,7 @@ recover_previous() {
     [[ -d "$TMP_DIR" ]] || return 0
     [[ -f "$TMP_DIR/target" ]] && read -r target < "$TMP_DIR/target"
     while IFS= read -r -d '' p; do
-        f="${TMP_DIR%/*}/${p#"$TMP_DIR/"}"; f="${f%.previous}"
+        f="$ROOT_DIR/${p#"$TMP_DIR/"}"; f="${f%.previous}"
         if [[ -e "$f" || ( -n "$target" && -e "$target" ) ]]; then
             rm -f "$p"
         else

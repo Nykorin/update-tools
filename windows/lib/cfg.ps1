@@ -1,7 +1,8 @@
 # cfg.ps1: reading and saving the item cfgs (JSON), and the settings file.
 # Loaded by update-tools.ps1.
 
-# Each item's cfg is .cfg\NAME.json, as in the bash version: your keys at the
+# Each item's cfg is .update-tools\db\NAME.json in its folder, as in the bash
+# version: your keys at the
 # top level, the ones the scripts write under "state", and an optional
 # "comment" the scripts ignore. Values are text (numbers and true/false are
 # read as text too). Read-Item returns only the keys below: a cfg is data,

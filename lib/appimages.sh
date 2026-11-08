@@ -7,7 +7,7 @@
 
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
-# Writes the entry if it's missing, or if .cfg/NAME.desktop no longer matches
+# Writes the entry if it's missing, or if db/NAME.desktop no longer matches
 # it (an edited file applies on the next run).
 ensure_desktop_entry() {
     local entry; entry=$(desktop_entry_path "$1")
@@ -20,7 +20,7 @@ ensure_desktop_entry() {
 # Your own entry for app $1, used instead of the AppImage's.
 desktop_sidecar() { echo "$CFG_DIR/$1.desktop"; }
 
-# .cfg/NAME.desktop for app $1 with {appimage} replaced by $2, quoted on Exec
+# db/NAME.desktop for app $1 with {appimage} replaced by $2, quoted on Exec
 # lines (which split on spaces).
 render_desktop_file() {
     local line file="$2" exec_file="$2"
@@ -85,7 +85,7 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && \
         embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
-    # .cfg/NAME.desktop replaces the AppImage's own entry, verbatim
+    # db/NAME.desktop replaces the AppImage's own entry, verbatim
     local own_entry="" sidecar; sidecar=$(desktop_sidecar "$name")
     if [[ -f "$sidecar" ]]; then
         if grep -q '^\[Desktop Entry\][[:space:]]*$' "$sidecar"; then
@@ -97,7 +97,7 @@ generate_desktop_entry() {
     fi
 
     # The entry names its icon instead of pointing at a file, so the icon theme
-    # supplies it when it has one. ~/.icons -> .icons/ is the fallback (the icon
+    # supplies it when it has one. ~/.icons -> icons/ is the fallback (the icon
     # spec's lookup of unthemed icons, by exact name), so the file is saved
     # under that name too.
     local icon="${icon_name:-}"
@@ -236,8 +236,7 @@ item_extras() {
 
 
 prepare_dir() {
-    ICONS_DIR="$dir/.icons"
-    TMP_DIR="$dir/.tmp"
+    ICONS_DIR="$dir/.update-tools/icons"
     mkdir -p "$ICONS_DIR"
     # entries name their icon, and the desktop looks for icons no theme has in
     # ~/.icons, not here

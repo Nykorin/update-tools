@@ -26,7 +26,6 @@ function Export-ZipMember([string]$Zip, [string]$Member, [string]$Dest) {
 }
 
 function apw_PrepareDir {
-    $script:TmpDir = Join-Path $script:Dir '.tmp'
     [void](New-Item -ItemType Directory -Force -Path $script:TmpDir)
     # left over from an interrupted earlier run: an old version goes back first
     Restore-Interrupted

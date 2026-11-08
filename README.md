@@ -91,10 +91,19 @@ It never overwrites an existing cfg.
 
 ### By hand
 
-Each item has a cfg in its mode's `.cfg/` folder, `NAME.json`: a JSON object whose values are text. The scripts read only the keys below (any other is reported and ignored), and keep what they write themselves under `"state"`. JSON has no comments, so a cfg can hold a `"comment"`, which the scripts ignore; `make-update-cfg` puts the link there.
+Each mode's folder holds the scripts' own hidden folder (hidden, so Archipelago and Ventoy pass it over):
+
+```
+.update-tools/
+├── db/      the cfgs (NAME.json), and your own desktop entries (NAME.desktop, AppImages)
+├── icons/   AppImages only: the extracted icons; link ~/.icons to it for icons your theme lacks
+└── tmp/     staged downloads, and the old version during an install (for ISOs, only then)
+```
+
+Each item has a cfg in its mode's folder, as `.update-tools/db/NAME.json`: a JSON object whose values are text. The scripts read only the keys below (any other is reported and ignored), and keep what they write themselves under `"state"`. JSON has no comments, so a cfg can hold a `"comment"`, which the scripts ignore; `make-update-cfg` puts the link there.
 
 ```jsonc
-// ~/AppImages/.cfg/dusklight.json
+// ~/AppImages/.update-tools/db/dusklight.json
 {
   "manager": "github",
   "repo": "TwilitRealm/dusklight",
@@ -103,7 +112,7 @@ Each item has a cfg in its mode's `.cfg/` folder, `NAME.json`: a JSON object who
 ```
 
 ```jsonc
-// custom_worlds/.cfg/7dtd_world.json
+// custom_worlds/.update-tools/db/7dtd_world.json
 {
   "manager": "github",
   "repo": "OrcThrowman/7-Days-to-Die-AP",
@@ -112,7 +121,7 @@ Each item has a cfg in its mode's `.cfg/` folder, `NAME.json`: a JSON object who
 ```
 
 ```jsonc
-// .cfg/archlinux.json in the ISO folder
+// .update-tools/db/archlinux.json in the ISO folder
 {
   "folder": "Linux/ArchLinux",
   "manager": "static",
@@ -151,7 +160,7 @@ AppImages can set:
 | `icon_name` | the icon name the desktop entry uses, for an icon theme that names the app differently |
 | `install_name` | install the AppImage under this name instead of its upstream one (`{name}` is the cfg's name; `.AppImage` is added if missing). An app already installed under another name is renamed on its next run |
 
-An AppImage's desktop entry is built from the `.desktop` file inside it. To use your own instead, put it next to the cfg as `.cfg/NAME.desktop`; `{appimage}` in it stands for the installed AppImage's path (`Exec=env DESKTOPINTEGRATION=1 {appimage} %u`). It's written whenever it changes, on the next run.
+An AppImage's desktop entry is built from the `.desktop` file inside it. To use your own instead, put it next to the cfg as `.update-tools/db/NAME.desktop`; `{appimage}` in it stands for the installed AppImage's path (`Exec=env DESKTOPINTEGRATION=1 {appimage} %u`). It's written whenever it changes, on the next run.
 
 The scripts add their own keys under `"state"` after each check (`current_version`, `installed_file`, `last_checked`, ETags, digests, `iso_hash`). Leave those alone; a cfg without `installed_file` means "not installed yet", so the item is installed on the next run.
 

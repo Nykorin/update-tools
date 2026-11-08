@@ -229,7 +229,7 @@ process_item() {
     target="$dir/$new_name"
 
     # the installed version (and a stray file already using the new name) waits
-    # in .tmp until the new one is in place
+    # in tmp/ until the new one is in place
     if ! set_aside "$installed_path" "$target"; then
         say "  ✗ $name: could not move the old version aside, nothing changed"
         rm -f "$tmp_download"
@@ -279,7 +279,12 @@ run_mode() {
         echo "ERROR: $dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}${ROOT_HINT:+ $ROOT_HINT}" >&2
         exit 1
     fi
-    CFG_DIR="$dir/.cfg"
+    # the scripts' own folder in the item folder (dot-prefixed: Archipelago
+    # skips it in custom_worlds): db/ holds the cfgs, tmp/ the staged downloads
+    # and old versions during an install, on the items' own disk
+    ROOT_DIR="$dir"
+    CFG_DIR="$dir/.update-tools/db"
+    TMP_DIR="$dir/.update-tools/tmp"
 
     require_cmds "$ITEM_TYPE"
     mkdir -p "$CFG_DIR"
@@ -289,9 +294,8 @@ run_mode() {
 
     shopt -s nullglob
     local cfg_files=("$CFG_DIR"/*.json)
-    # cfgs from before 2026-11-07 aren't read any more
-    local old_cfgs=("$CFG_DIR"/*."$ITEM_EXT".cfg)
-    (( ${#old_cfgs[@]} )) && say "⚠ ${#old_cfgs[@]} old *.$ITEM_EXT.cfg file(s) in $CFG_DIR are ignored: cfgs are NAME.json now"
+    # the layout from before 2026-11-07 isn't read any more
+    [[ -d "$dir/.cfg" ]] && say "⚠ $dir/.cfg is ignored: cfgs are NAME.json in .update-tools/db now"
     if (( ${#cfg_files[@]} == 0 )); then
         say "⚠ no *.json files in $CFG_DIR, nothing to do"
         return 0

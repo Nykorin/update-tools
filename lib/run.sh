@@ -39,6 +39,8 @@ cleanup() {
     rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}" "$tmp_download"
     rm -rf "$tmp_extract_dir" "$DESKTOP_TMP"
     settle_previous
+    # ISOs need tmp/ only during an update
+    [[ "${ITEM_TYPE:-}" == iso && -n "${TMP_DIR:-}" ]] && rmdir "$TMP_DIR" 2>/dev/null
     return 0
 }
 

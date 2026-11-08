@@ -74,7 +74,6 @@ item_validate() {
 
 
 prepare_dir() {
-    TMP_DIR="$dir/.tmp"
     mkdir -p "$TMP_DIR"
     # left over from an interrupted earlier run: an old version goes back first
     recover_previous

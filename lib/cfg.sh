@@ -3,7 +3,7 @@
 # Loaded by load.sh.
 # SC2154: cfg keys and per-item variables are assigned outside this file.
 
-# Each item's cfg is .cfg/NAME.json: your keys at the top level, the ones the
+# Each item's cfg is .update-tools/db/NAME.json in its folder: your keys at the top level, the ones the
 # scripts write under "state", and an optional "comment" the scripts ignore.
 # Values are text (numbers and true/false are read as text too).
 #

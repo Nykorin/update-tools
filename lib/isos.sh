@@ -124,12 +124,13 @@ item_extras() {
 prepare_dir() {
     # process_item points dir at each ISO's folder, so keep the root
     ISO_DIR="$dir"
-    # old versions wait here during an update (as .previous, which Ventoy
-    # doesn't list)
-    TMP_DIR="$dir/.tmp"
+    # old versions wait in TMP_DIR during an update (as .previous, which
+    # Ventoy doesn't list); it's there only then
     # left over from a run that was killed outright (Ctrl+C cleans up after
     # itself): an old version goes back, a half-downloaded ISO goes (.NAME.part:
     # an upstream name may not end in .iso)
     recover_previous
     find "$dir" -mindepth 1 -name '.*.part' -type f -delete
+    [[ -d "$TMP_DIR" ]] && find "$TMP_DIR" -depth -type d -empty -delete
+    return 0
 }

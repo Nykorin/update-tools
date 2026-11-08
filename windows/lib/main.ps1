@@ -156,16 +156,21 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
         return $false
     }
     $script:Dir = (Resolve-Path -LiteralPath $dir).ProviderPath
-    $cfgDir = Join-Path $script:Dir '.cfg'
+    # the scripts' own folder in the item folder (dot-prefixed: Archipelago
+    # skips it in custom_worlds): db holds the cfgs, tmp the staged downloads
+    # and old versions during an install, on the items' own disk
+    $script:Root = $script:Dir
+    $cfgDir = Join-Path (Join-Path $script:Dir '.update-tools') 'db'
+    $script:TmpDir = Join-Path (Join-Path $script:Dir '.update-tools') 'tmp'
     [void](New-Item -ItemType Directory -Force -Path $cfgDir)
     $script:Staged = ''
     [void](Invoke-Hook 'PrepareDir' $null)
 
     # -Filter would also match *.jsonX on Windows
     $cfgs = @(Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like '*.json' } | Sort-Object Name | ForEach-Object { $_.FullName })
-    # cfgs from before 2026-11-07 aren't read any more
-    $old = @(Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like "*.$($s.Ext).cfg" })
-    if ($old.Count) { Say "⚠ $($old.Count) old *.$($s.Ext).cfg file(s) in $cfgDir are ignored: cfgs are NAME.json now" }
+    # the layout from before 2026-11-07 isn't read any more
+    $oldDir = Join-Path $script:Dir '.cfg'
+    if (Test-Path -LiteralPath $oldDir -PathType Container) { Say "⚠ $oldDir is ignored: cfgs are NAME.json in .update-tools/db now" }
     if ($cfgs.Count -eq 0) {
         Say "⚠ no *.json files in $cfgDir, nothing to do"
         return $true
@@ -185,6 +190,8 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
         Remove-IfThere $script:Staged
         if ($script:TmpDir) { Remove-IfThere (Join-Path $script:TmpDir 'extracted.apworld') }
         Complete-Previous
+        # ISOs need tmp only during an update
+        if ($Type -eq 'iso') { Remove-EmptyTree $script:TmpDir }
         $script:Done = $cfgs.Count
         if ($script:DebugOn) { Say ("  · total: took {0:N2}s" -f $total.Elapsed.TotalSeconds) }
         Stop-Progress

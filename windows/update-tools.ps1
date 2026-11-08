@@ -29,7 +29,8 @@ function Show-Usage([switch]$ToError) {
     $text = @"
 Usage: update-tools.ps1 -m MODE [OPTIONS]
 Check and update Archipelago worlds and ISOs. Each item has a cfg (NAME.json)
-in its folder's .cfg folder; one whose item isn't there yet is installed.
+in its folder's .update-tools\db; one whose item isn't there yet is
+installed.
 
 Modes:
   apw, apworlds     the Archipelago custom worlds

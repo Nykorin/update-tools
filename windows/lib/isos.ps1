@@ -27,14 +27,14 @@ function Find-Checksum([string]$Text, [string]$Name) {
 function iso_PrepareDir {
     # each item's dir is its ISO's folder, so keep the root
     $script:IsoDir = $script:Dir
-    # old versions wait here during an update (as .previous, which Ventoy
-    # doesn't list)
-    $script:TmpDir = Join-Path $script:Dir '.tmp'
+    # old versions wait in TmpDir during an update (as .previous, which
+    # Ventoy doesn't list); it's there only then
     # left over from a run that was killed outright (Ctrl+C cleans up after
     # itself): an old version goes back, a half-downloaded ISO goes
     Restore-Interrupted
     Get-ChildItem -LiteralPath $script:Dir -Recurse -Force -File -Filter '.*.part' -ErrorAction SilentlyContinue |
         ForEach-Object { Remove-IfThere $_.FullName }
+    Remove-EmptyTree $script:TmpDir
 }
 
 # folder= is relative to the root, so -Root still works; it may not leave it.

@@ -11,13 +11,23 @@ function Move-File([string]$From, [string]$To) {
     try { [IO.File]::Move($From, $To); $true } catch { $false }
 }
 
+# Removes the folder $Path and the folders in it, if they're all empty.
+function Remove-EmptyTree([string]$Path) {
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) { return }
+    $dirs = @(Get-ChildItem -LiteralPath $Path -Recurse -Force -Directory | Sort-Object { $_.FullName.Length } -Descending)
+    foreach ($d in $dirs) {
+        if (-not (Get-ChildItem -LiteralPath $d.FullName -Force)) { Remove-Item -LiteralPath $d.FullName -Force }
+    }
+    if (-not (Get-ChildItem -LiteralPath $Path -Force)) { Remove-Item -LiteralPath $Path -Force }
+}
+
 function Remove-IfThere([string]$Path) {
     if ($Path -and (Test-Path -LiteralPath $Path)) { Remove-Item -LiteralPath $Path -Force -Recurse -ErrorAction SilentlyContinue }
 }
 
 # ---------------------------------------------------------------------------
-# The old version during an install: renamed into TmpDir (always ROOT\.tmp,
-# on the same disk) right before the new one goes in, deleted once it's in
+# The old version during an install: renamed into TmpDir (always
+# ROOT\.update-tools\tmp, on the same disk) right before the new one goes in, deleted once it's in
 # place, renamed back if the install fails or the run is interrupted. It keeps
 # its path below the root and gets a .previous suffix, which never ends in .iso,
 # so Ventoy can't list it.
@@ -30,8 +40,7 @@ $script:Aside = [Collections.Generic.List[string]]::new()
 $script:InstallTarget = ''
 
 function Get-PreviousPath([string]$File) {
-    $root = Split-Path -Parent $script:TmpDir
-    Join-Path $script:TmpDir ($File.Substring($root.Length).TrimStart('\', '/') + '.previous')
+    Join-Path $script:TmpDir ($File.Substring($script:Root.Length).TrimStart('\', '/') + '.previous')
 }
 
 # Removes the folders Get-PreviousPath made, up to TmpDir, once empty.
@@ -110,7 +119,7 @@ function Restore-Interrupted {
     if (-not (Test-Path -LiteralPath $script:TmpDir -PathType Container)) { return }
     $targetFile = Join-Path $script:TmpDir 'target'
     $target = if (Test-Path -LiteralPath $targetFile) { ([IO.File]::ReadAllText($targetFile)).Trim() } else { '' }
-    $root = Split-Path -Parent $script:TmpDir
+    $root = $script:Root
     foreach ($p in @(Get-ChildItem -LiteralPath $script:TmpDir -Recurse -Force -File -Filter '*.previous')) {
         $f = Join-Path $root ($p.FullName.Substring($script:TmpDir.Length).TrimStart('\', '/') -replace '\.previous$', '')
         if ((Test-Path -LiteralPath $f) -or ($target -and (Test-Path -LiteralPath $target))) {
