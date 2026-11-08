@@ -7,8 +7,28 @@
 
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
+# Writes the entry if it's missing, or if the cfg's desktop_file no longer
+# matches it (an edited cfg applies on the next run).
 ensure_desktop_entry() {
-    [[ -f "$(desktop_entry_path "$1")" ]] || generate_desktop_entry "$1" "$2"
+    local entry; entry=$(desktop_entry_path "$1")
+    if [[ ! -f "$entry" ]] ||
+       { [[ -n "${desktop_file:-}" ]] && [[ "$(render_desktop_file "$2")" != "$(<"$entry")" ]]; }; then
+        generate_desktop_entry "$1" "$2"
+    fi
+}
+
+# The cfg's desktop_file with {appimage} replaced by $1, quoted on Exec lines
+# (which split on spaces).
+render_desktop_file() {
+    local line file="$1" exec_file="$1"
+    [[ "$exec_file" =~ [^A-Za-z0-9._/+-] ]] && exec_file="\"$exec_file\""
+    while IFS= read -r line; do
+        if [[ "$line" == Exec=* ]]; then
+            printf '%s\n' "${line//\{appimage\}/"$exec_file"}"
+        else
+            printf '%s\n' "${line//\{appimage\}/"$file"}"
+        fi
+    done <<<"${desktop_file%$'\n'}"
 }
 
 icon_exists() {
@@ -61,13 +81,27 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && \
         embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
+    # desktop_file in the cfg replaces the AppImage's own entry, verbatim
+    local own_entry=""
+    if [[ -n "${desktop_file:-}" ]]; then
+        if [[ $'\n'"$desktop_file" == *$'\n[Desktop Entry]'* ]]; then
+            own_entry=1
+            debug "desktop entry from the cfg's desktop_file"
+        else
+            say "  ⚠ $name: desktop_file has no [Desktop Entry] line, using the AppImage's own"
+        fi
+    fi
+
     # The entry names its icon instead of pointing at a file, so the icon theme
     # supplies it when it has one. ~/.icons -> .icons/ is the fallback (the icon
     # spec's lookup of unthemed icons, by exact name), so the file is saved
     # under that name too.
     local icon="${icon_name:-}"
-    [[ -z "$icon" && -n "$embedded_desktop" ]] && \
+    if [[ -z "$icon" && -n "$own_entry" ]]; then
+        icon=$(sed -n '/^Icon=/{s///p;q}' <<<"$desktop_file")
+    elif [[ -z "$icon" && -n "$embedded_desktop" ]]; then
         icon=$(sed -n '/^Icon=/{s///p;q}' "$embedded_desktop")
+    fi
     icon="${icon%.png}"; icon="${icon%.svg}"; icon="${icon%.xpm}"
     # a path instead of a name, or none at all
     [[ -z "$icon" || "$icon" == */* ]] && icon="$name"
@@ -102,7 +136,10 @@ generate_desktop_entry() {
     [[ "$exec_file" =~ [^A-Za-z0-9._/+-] ]] && exec_file="\"$exec_file\""
     sed_file="${appimage_file//&/\\&}"; sed_file="${sed_file//|/\\|}"
     sed_exec="${exec_file//&/\\&}"; sed_exec="${sed_exec//|/\\|}"
-    if [[ -n "$embedded_desktop" ]]; then
+    if [[ -n "$own_entry" ]]; then
+        render_desktop_file "$appimage_file" > "$desktop_dest"
+        status "󰴚 desktop entry written from desktop_file"
+    elif [[ -n "$embedded_desktop" ]]; then
         sed -e "s|^Icon=.*|Icon=$icon|" \
             -e "s|^TryExec=.*|TryExec=$sed_file|" \
             -e "s|^Exec=.*|Exec=env DESKTOPINTEGRATION=1 $sed_exec %f|" \

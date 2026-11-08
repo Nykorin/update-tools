@@ -8,27 +8,43 @@ CFG_KEYS=(
     manager repo repo_filename repo_regex allow_prereleases repo_url
     feed_url channel arch_key download_base url
     content_length last_modified current_version
-    apworld_filename icon_name install_name installed_file last_checked
+    apworld_filename icon_name install_name desktop_file installed_file last_checked
     asset_digest etag
     checksum checksum_save download_suffix probe_days
     folder iso_hash checksum_file
 )
 
 # Sets the cfg's keys as variables. $2… = the keys allowed (default: CFG_KEYS).
+# A value may span lines as KEY={ … } (desktop_file): the lines in between are
+# kept verbatim, comments and blank lines included; without its closing } the
+# key is ignored and the lines after it are read as usual.
 load_cfg() {
     local cfg_file="$1"
-    local line key value
-    local -a keys=("${@:2}")
+    local line key value i j
+    local -a keys=("${@:2}") lines
     (( ${#keys[@]} )) || keys=("${CFG_KEYS[@]}")
 
     unset "${keys[@]}"
 
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # a cfg saved with Windows line endings: the \r would end every value
-        line="${line%$'\r'}"
+    mapfile -t lines < "$cfg_file"
+    # a cfg saved with Windows line endings: the \r would end every value
+    lines=("${lines[@]%$'\r'}")
+    for (( i = 0; i < ${#lines[@]}; i++ )); do
+        line="${lines[i]}"
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
-        if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+        if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=\{[[:space:]]*$ ]]; then
+            key="${BASH_REMATCH[1]}"
+            for (( j = i + 1; j < ${#lines[@]}; j++ )); do
+                [[ "${lines[j]}" =~ ^\}[[:space:]]*$ ]] && break
+            done
+            if (( j == ${#lines[@]} )); then
+                say "⚠ ${PROGRESS_LABEL:-}: $key={ has no closing } in ${cfg_file##*/}, ignored"
+                continue
+            fi
+            printf -v value '%s\n' "${lines[@]:i+1:j-i-1}"
+            i=$j
+        elif [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
             key="${BASH_REMATCH[1]}"
             value="${BASH_REMATCH[2]}"
             if [[ "$value" == \"*\" && "$value" == *\" ]]; then
@@ -36,13 +52,15 @@ load_cfg() {
                 value="${value%\"}"
                 value="${value//\\\"/\"}"
             fi
-            if [[ " ${keys[*]} " == *" $key "* ]]; then
-                printf -v "$key" '%s' "$value"
-            else
-                say "⚠ ${PROGRESS_LABEL:-}: unknown key '$key' in ${cfg_file##*/}, ignored"
-            fi
+        else
+            continue
         fi
-    done < "$cfg_file"
+        if [[ " ${keys[*]} " == *" $key "* ]]; then
+            printf -v "$key" '%s' "$value"
+        else
+            say "⚠ ${PROGRESS_LABEL:-}: unknown key '$key' in ${cfg_file##*/}, ignored"
+        fi
+    done
 }
 
 # The user's settings file (read like a cfg, never sourced): each mode's folder
