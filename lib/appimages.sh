@@ -7,28 +7,32 @@
 
 desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
 
-# Writes the entry if it's missing, or if the cfg's desktop_file no longer
-# matches it (an edited cfg applies on the next run).
+# Writes the entry if it's missing, or if .cfg/NAME.desktop no longer matches
+# it (an edited file applies on the next run).
 ensure_desktop_entry() {
     local entry; entry=$(desktop_entry_path "$1")
     if [[ ! -f "$entry" ]] ||
-       { [[ -n "${desktop_file:-}" ]] && [[ "$(render_desktop_file "$2")" != "$(<"$entry")" ]]; }; then
+       { [[ -f "$(desktop_sidecar "$1")" ]] && [[ "$(render_desktop_file "$1" "$2")" != "$(<"$entry")" ]]; }; then
         generate_desktop_entry "$1" "$2"
     fi
 }
 
-# The cfg's desktop_file with {appimage} replaced by $1, quoted on Exec lines
-# (which split on spaces).
+# Your own entry for app $1, used instead of the AppImage's.
+desktop_sidecar() { echo "$CFG_DIR/$1.desktop"; }
+
+# .cfg/NAME.desktop for app $1 with {appimage} replaced by $2, quoted on Exec
+# lines (which split on spaces).
 render_desktop_file() {
-    local line file="$1" exec_file="$1"
+    local line file="$2" exec_file="$2"
     [[ "$exec_file" =~ [^A-Za-z0-9._/+-] ]] && exec_file="\"$exec_file\""
-    while IFS= read -r line; do
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line="${line%$'\r'}"
         if [[ "$line" == Exec=* ]]; then
             printf '%s\n' "${line//\{appimage\}/"$exec_file"}"
         else
             printf '%s\n' "${line//\{appimage\}/"$file"}"
         fi
-    done <<<"${desktop_file%$'\n'}"
+    done < "$(desktop_sidecar "$1")"
 }
 
 icon_exists() {
@@ -81,14 +85,14 @@ generate_desktop_entry() {
     [[ -z "$embedded_desktop" ]] && \
         embedded_desktop=$(find "$squashfs_root" -maxdepth 3 -iname "*.desktop" -print -quit)
 
-    # desktop_file in the cfg replaces the AppImage's own entry, verbatim
-    local own_entry=""
-    if [[ -n "${desktop_file:-}" ]]; then
-        if [[ $'\n'"$desktop_file" == *$'\n[Desktop Entry]'* ]]; then
+    # .cfg/NAME.desktop replaces the AppImage's own entry, verbatim
+    local own_entry="" sidecar; sidecar=$(desktop_sidecar "$name")
+    if [[ -f "$sidecar" ]]; then
+        if grep -q '^\[Desktop Entry\][[:space:]]*$' "$sidecar"; then
             own_entry=1
-            debug "desktop entry from the cfg's desktop_file"
+            debug "desktop entry from ${sidecar##*/}"
         else
-            say "  ⚠ $name: desktop_file has no [Desktop Entry] line, using the AppImage's own"
+            say "  ⚠ $name: ${sidecar##*/} has no [Desktop Entry] line, using the AppImage's own"
         fi
     fi
 
@@ -98,7 +102,7 @@ generate_desktop_entry() {
     # under that name too.
     local icon="${icon_name:-}"
     if [[ -z "$icon" && -n "$own_entry" ]]; then
-        icon=$(sed -n '/^Icon=/{s///p;q}' <<<"$desktop_file")
+        icon=$(sed -n '/^Icon=/{s///;s/\r$//;p;q}' "$sidecar")
     elif [[ -z "$icon" && -n "$embedded_desktop" ]]; then
         icon=$(sed -n '/^Icon=/{s///p;q}' "$embedded_desktop")
     fi
@@ -137,8 +141,8 @@ generate_desktop_entry() {
     sed_file="${appimage_file//&/\\&}"; sed_file="${sed_file//|/\\|}"
     sed_exec="${exec_file//&/\\&}"; sed_exec="${sed_exec//|/\\|}"
     if [[ -n "$own_entry" ]]; then
-        render_desktop_file "$appimage_file" > "$desktop_dest"
-        status "󰴚 desktop entry written from desktop_file"
+        render_desktop_file "$name" "$appimage_file" > "$desktop_dest"
+        status "󰴚 desktop entry written from ${sidecar##*/}"
     elif [[ -n "$embedded_desktop" ]]; then
         sed -e "s|^Icon=.*|Icon=$icon|" \
             -e "s|^TryExec=.*|TryExec=$sed_file|" \
@@ -193,7 +197,7 @@ item_setup() {
     fi
     say "  ✓ $name: renamed $installed_file to $install_as"
     installed_file="$install_as"
-    update_cfg "$cfg_file" "installed_file=$installed_file"
+    save_state "$cfg_file" "installed_file=$installed_file"
     # the entry's Exec and TryExec name the file
     generate_desktop_entry "$name" "$dir/$install_as"
     return 0

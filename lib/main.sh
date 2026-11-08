@@ -9,7 +9,7 @@
 
 # Each mode's settings, by ITEM_TYPE: ITEM_CMD (its command), ITEM_TITLE (its
 # heading when update-tools runs all three),
-# ITEM_EXT (its cfgs are NAME.ITEM_EXT.cfg), ITEM_MODE (for installed files;
+# ITEM_EXT (its files' extension), ITEM_MODE (for installed files;
 # empty leaves the mode alone), DEFAULT_DIR (from the paths file; empty when it
 # isn't set there) and DIR_KEY (its key in that file), and for the
 # folder-not-found error NOT_FOUND_HINT (may be empty) and ROOT_HINT (the -r
@@ -109,7 +109,7 @@ run_items() {
 # has said why and skips the item. ITEM_LOCALS names the variables a module's
 # hooks share, made local to each item.
 ITEM_LOCALS=()
-item_setup()         { :; }   # after load_cfg (ISOs: folder= and checksum)
+item_setup()         { :; }   # after load_item (ISOs: folder= and checksum)
 item_prepare_check() { :; }   # before is_up_to_date (ISOs: fetch the checksum)
 item_preflight()     { :; }   # before downloading (ISOs: free space)
 # the staged download: next to the items (same disk, not RAM-backed /tmp), so
@@ -126,14 +126,14 @@ process_item() {
     (( ${#ITEM_LOCALS[@]} )) && local "${ITEM_LOCALS[@]}"
     cfg_file="${cfg_files[$i]}"
     name="${cfg_file##*/}"
-    name="${name%".$ITEM_EXT.cfg"}"
+    name="${name%.json}"
 
     PROGRESS_DONE=$i
     PROGRESS_LABEL="$name"
     STATUS=""
     block_redraw
 
-    load_cfg "$cfg_file"
+    load_item "$cfg_file" || return 0
     debug "cfg: manager=${manager:-?} version=${current_version:-none} installed_file=${installed_file:-none} last_checked=${last_checked:-never}"
     item_setup || return 0
 
@@ -288,9 +288,12 @@ run_mode() {
     start_run
 
     shopt -s nullglob
-    local cfg_files=("$CFG_DIR"/*."$ITEM_EXT".cfg)
+    local cfg_files=("$CFG_DIR"/*.json)
+    # cfgs from before 2026-11-07 aren't read any more
+    local old_cfgs=("$CFG_DIR"/*."$ITEM_EXT".cfg)
+    (( ${#old_cfgs[@]} )) && say "⚠ ${#old_cfgs[@]} old *.$ITEM_EXT.cfg file(s) in $CFG_DIR are ignored: cfgs are NAME.json now"
     if (( ${#cfg_files[@]} == 0 )); then
-        say "⚠ no *.$ITEM_EXT.cfg files in $CFG_DIR, nothing to do"
+        say "⚠ no *.json files in $CFG_DIR, nothing to do"
         return 0
     fi
     init_progress "${#cfg_files[@]}"

@@ -196,7 +196,7 @@ from_static() {
     fi
     # a version in the link itself means it never points at a newer release
     if [[ "$given" =~ [0-9]+\.[0-9]+|[0-9]{6,} ]]; then
-        say "⚠ $given names one release: a static cfg only sees that file change. For newer releases, use a link without the version, or manager=dirlist with * in place of it"
+        say "⚠ $given names one release: a static cfg only sees that file change. For newer releases, use a link without the version, or \"manager\": \"dirlist\" with * in place of it"
     fi
     manager=static url="$link"
     default_name=$(clean_name "$asset_name")
@@ -295,7 +295,7 @@ make_cfg() {
 
     name="${name_arg:-$default_name}"
     [[ -n "$name" && "$name" != */* ]] || die "can't make a cfg name from the link; pass NAME"
-    cfg="$CFG_DIR/$name.$ITEM_EXT.cfg"
+    cfg="$CFG_DIR/$name.json"
     [[ -e "$cfg" ]] && die "${cfg/#"$HOME"/\~} already exists"
     PROGRESS_LABEL="$name"
 
@@ -308,7 +308,7 @@ make_cfg() {
 
     if [[ "$ITEM_TYPE" == iso ]]; then
         find_checksum
-        [[ -n "$checksum" ]] || say "⚠ $name: no checksum file found next to the ISO; add checksum= by hand (required)"
+        [[ -n "$checksum" ]] || say "⚠ $name: no checksum file found next to the ISO; add \"checksum\" by hand (required)"
         folder="$name"
         pairs+=("folder=$folder")
     fi
@@ -323,20 +323,28 @@ make_cfg() {
     [[ -n "${allow_prereleases:-}" ]] && pairs+=("allow_prereleases=$allow_prereleases")
     [[ -n "${checksum:-}" ]] && pairs+=("checksum=$checksum")
 
-    # several worlds may share a repo, so this is only a warning
-    for other in "$CFG_DIR"/*."$ITEM_EXT".cfg; do
+    # several worlds may share a repo, so this is only a warning; one file at a
+    # time, so a broken cfg can't hide the others
+    for other in "$CFG_DIR"/*.json; do
         [[ -f "$other" ]] || continue
-        if grep -qxF -e "repo=${repo:-}" -e "repo_url=${repo_url:-}" -e "url=${url:-}" "$other"; then
+        if jq -e --arg repo "${repo:-}" --arg repo_url "${repo_url:-}" --arg url "${url:-}" \
+              '($repo != "" and .repo == $repo) or ($repo_url != "" and .repo_url == $repo_url)
+               or ($url != "" and .url == $url)' "$other" &>/dev/null; then
             say "⚠ $name: ${other##*/} already uses this ${repo:+repo}${repo_url:+repo}${url:+URL}"
         fi
     done
 
+    # the link as the comment, then the keys in the order above
     mkdir -p "$CFG_DIR"
-    printf '# %s\n' "$link" > "$cfg"
-    update_cfg "$cfg" "${pairs[@]}"
+    local pair
+    local -a kv=()
+    for pair in "${pairs[@]}"; do kv+=("${pair%%=*}" "${pair#*=}"); done
+    jq -n --indent 2 --arg link "$link" '($ARGS.positional) as $a
+        | {comment: $link} + ([range(0; $a | length; 2) as $i | {($a[$i]): $a[$i + 1]}] | add)' \
+        --args "${kv[@]}" > "$cfg" || die "could not write ${cfg/#"$HOME"/\~}"
     say "✓ wrote ${cfg/#"$HOME"/\~} (${tag:+$tag: }$asset_name):"
     sed 's/^/    /' "$cfg"
-    [[ "$ITEM_TYPE" == iso ]] && say "  folder=$folder is a guess: set it to the ISO's folder under ${dir/#"$HOME"/\~}"
+    [[ "$ITEM_TYPE" == iso ]] && say "  \"folder\": \"$folder\" is a guess: set it to the ISO's folder under ${dir/#"$HOME"/\~}"
     say "  $ITEM_CMD -c shows the install; a run without -c does it"
 }
 

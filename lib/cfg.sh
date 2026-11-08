@@ -1,50 +1,108 @@
 # shellcheck shell=bash disable=SC2154
-# cfg.sh: reading and saving the cfg files. Loaded by load.sh.
+# cfg.sh: reading and saving the item cfgs (JSON) and the settings file.
+# Loaded by load.sh.
 # SC2154: cfg keys and per-item variables are assigned outside this file.
 
-# Every key a cfg may hold. load_cfg sets only these: any other name could
-# overwrite one of the scripts' own variables (dir, name, HOME, PATH, ...).
-CFG_KEYS=(
+# Each item's cfg is .cfg/NAME.json: your keys at the top level, the ones the
+# scripts write under "state", and an optional "comment" the scripts ignore.
+# Values are text (numbers and true/false are read as text too).
+#
+# The keys you write (ITEM_KEYS) and the ones the scripts keep up to date
+# themselves (SAVE_KEYS, in the order new ones are added). load_item sets only
+# these as variables: any other name could overwrite one of the scripts' own
+# (dir, name, HOME, PATH, ...).
+ITEM_KEYS=(
     manager repo repo_filename repo_regex allow_prereleases repo_url
     feed_url channel arch_key download_base url
-    content_length last_modified current_version
-    apworld_filename icon_name install_name desktop_file installed_file last_checked
-    asset_digest etag
-    checksum checksum_save download_suffix probe_days
-    folder iso_hash checksum_file
+    apworld_filename icon_name install_name
+    checksum checksum_save download_suffix probe_days folder
 )
+SAVE_KEYS=(current_version last_checked content_length last_modified asset_digest etag
+           installed_file iso_hash checksum_file)
+CFG_KEYS=("${ITEM_KEYS[@]}" "${SAVE_KEYS[@]}")
 
-# Sets the cfg's keys as variables. $2… = the keys allowed (default: CFG_KEYS).
-# A value may span lines as KEY={ … } (desktop_file): the lines in between are
-# kept verbatim, comments and blank lines included; without its closing } the
-# key is ignored and the lines after it are read as usual.
+# One record per value, NUL-separated: kind (k: a key, s: a state key, b: a
+# list or object where text belongs, o: a "state" that isn't an object), key,
+# value; then "end", so a cut-off
+# stream (bad JSON) can't pass for a short cfg. null counts as unset.
+# shellcheck disable=SC2016  # jq code, not shell
+ITEM_JQ='
+def rec($kind): if .value == null then empty
+    elif (.value | type) == "object" or (.value | type) == "array" then "b", .key, ""
+    else $kind, .key, (.value | tostring) end;
+if type != "object" then error("not a JSON object") else . end
+| (to_entries[] | select(.key != "state" and .key != "comment") | rec("k")),
+  (.state // {} | if type == "object" then to_entries[] | rec("s") else "o", "state", "" end),
+  "end"
+| ., "\u0000"'
+
+# Sets the item's keys from its JSON as variables (unset when absent). Returns
+# 1, having said why, when the file isn't a valid JSON object.
+load_item() {
+    local file="$1" i key kind label why
+    local -a recs=()
+    unset "${CFG_KEYS[@]}"
+    mapfile -d '' recs < <(jq -j "$ITEM_JQ" "$file" 2>/dev/null)
+    if (( ${#recs[@]} == 0 )) || [[ "${recs[-1]}" != end ]]; then
+        # only now, for the message: jq's own reason, with its line and column
+        why=$(jq empty "$file" 2>&1 | head -n 1)
+        why="${why#jq: }"
+        [[ -s "$file" ]] || why="empty file"
+        say "⚠ ${PROGRESS_LABEL:-}: ${file##*/} isn't a valid cfg (${why:-not a JSON object}), skipping"
+        return 1
+    fi
+    for (( i = 0; i + 2 < ${#recs[@]}; i += 3 )); do
+        kind="${recs[i]}" key="${recs[i+1]}"
+        case "$kind" in
+            k) label="$key"; [[ " ${ITEM_KEYS[*]} " == *" $key "* ]] ;;
+            s) label="state.$key"; [[ " ${SAVE_KEYS[*]} " == *" $key "* ]] ;;
+            o) say "⚠ ${PROGRESS_LABEL:-}: 'state' in ${file##*/} isn't an object, ignored"; continue ;;
+            *) say "⚠ ${PROGRESS_LABEL:-}: '$key' in ${file##*/} must be text, ignored"; continue ;;
+        esac || { say "⚠ ${PROGRESS_LABEL:-}: unknown key '$label' in ${file##*/}, ignored"; continue; }
+        printf -v "$key" '%s' "${recs[i+2]}"
+    done
+}
+
+# Sets KEY=VALUE pairs under the item's "state" in $1, keeping everything else
+# (and the order of the keys already there); content_length is saved as a
+# number. Written next to the file and renamed over it, so a cut-off write
+# never leaves half a cfg.
+# shellcheck disable=SC2016  # jq code, not shell
+SAVE_JQ='
+($ARGS.positional) as $a
+| .state = (.state // {}) + ([range(0; $a | length; 2) as $i
+    | {($a[$i]): (if $a[$i] == "content_length" then ($a[$i + 1] | tonumber? // $a[$i + 1]) else $a[$i + 1] end)}]
+    | add // {})'
+save_state() {
+    local file="$1" tmp pair
+    local -a args=()
+    shift
+    tmp="${file%/*}/.${file##*/}.tmp"
+    for pair; do args+=("${pair%%=*}" "${pair#*=}"); done
+    if jq --indent 2 "$SAVE_JQ" "$file" --args "${args[@]}" > "$tmp" 2>/dev/null && mv -f "$tmp" "$file"; then
+        return 0
+    fi
+    rm -f "$tmp"
+    say "  ✗ ${PROGRESS_LABEL:-}: could not save ${file##*/}"
+    return 1
+}
+
+# Sets a KEY=VALUE file's keys as variables (the settings file; the item cfgs
+# were these too until 2026-11-07). $2… = the keys allowed.
 load_cfg() {
     local cfg_file="$1"
-    local line key value i j
-    local -a keys=("${@:2}") lines
+    local line key value
+    local -a keys=("${@:2}")
     (( ${#keys[@]} )) || keys=("${CFG_KEYS[@]}")
 
     unset "${keys[@]}"
 
-    mapfile -t lines < "$cfg_file"
-    # a cfg saved with Windows line endings: the \r would end every value
-    lines=("${lines[@]%$'\r'}")
-    for (( i = 0; i < ${#lines[@]}; i++ )); do
-        line="${lines[i]}"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # a cfg saved with Windows line endings: the \r would end every value
+        line="${line%$'\r'}"
         [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
 
-        if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=\{[[:space:]]*$ ]]; then
-            key="${BASH_REMATCH[1]}"
-            for (( j = i + 1; j < ${#lines[@]}; j++ )); do
-                [[ "${lines[j]}" =~ ^\}[[:space:]]*$ ]] && break
-            done
-            if (( j == ${#lines[@]} )); then
-                say "⚠ ${PROGRESS_LABEL:-}: $key={ has no closing } in ${cfg_file##*/}, ignored"
-                continue
-            fi
-            printf -v value '%s\n' "${lines[@]:i+1:j-i-1}"
-            i=$j
-        elif [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
+        if [[ "$line" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
             key="${BASH_REMATCH[1]}"
             value="${BASH_REMATCH[2]}"
             if [[ "$value" == \"*\" && "$value" == *\" ]]; then
@@ -52,15 +110,13 @@ load_cfg() {
                 value="${value%\"}"
                 value="${value//\\\"/\"}"
             fi
-        else
-            continue
+            if [[ " ${keys[*]} " == *" $key "* ]]; then
+                printf -v "$key" '%s' "$value"
+            else
+                say "⚠ ${PROGRESS_LABEL:-}: unknown key '$key' in ${cfg_file##*/}, ignored"
+            fi
         fi
-        if [[ " ${keys[*]} " == *" $key "* ]]; then
-            printf -v "$key" '%s' "$value"
-        else
-            say "⚠ ${PROGRESS_LABEL:-}: unknown key '$key' in ${cfg_file##*/}, ignored"
-        fi
-    done
+    done < "$cfg_file"
 }
 
 # The user's settings file (read like a cfg, never sourced): each mode's folder
@@ -138,32 +194,6 @@ require_keys() {
     return 1
 }
 
-update_cfg() {
-    local cfg_file="$1"
-    shift
-    local pair key value escaped
-
-    [[ -s "$cfg_file" && -n "$(tail -c1 "$cfg_file")" ]] && echo >> "$cfg_file"
-
-    for pair in "$@"; do
-        key="${pair%%=*}"
-        value="${pair#*=}"
-
-        if [[ "$value" =~ [[:space:]\"] ]]; then
-            value="\"${value//\"/\\\"}\""
-        fi
-
-        if grep -q "^${key}=" "$cfg_file"; then
-            escaped="${value//\\/\\\\}"
-            escaped="${escaped//&/\\&}"
-            escaped="${escaped//|/\\|}"
-            sed -i "s|^${key}=.*|${key}=${escaped}|" "$cfg_file"
-        else
-            echo "${key}=${value}" >> "$cfg_file"
-        fi
-    done
-}
-
 # The file the cfg's installed_file names, if it's still in folder $1: prints
 # its full path, or nothing. Runs inside $(...), so it never prints a message.
 find_installed() {
@@ -171,15 +201,10 @@ find_installed() {
     return 0
 }
 
-# Cfg keys the scripts keep up to date themselves, in the order new ones are
-# added.
-SAVE_KEYS=(current_version last_checked content_length last_modified asset_digest etag
-           installed_file iso_hash checksum_file)
-
 # Save the item's state after a successful check or update; every mode uses
 # this. Each key takes its value from the item being handled: what
 # resolve_latest_asset found (cleared for every item), or the cfg variable of
-# the same name (installed_file, iso_hash, checksum_file), which load_cfg
+# the same name (installed_file, iso_hash, checksum_file), which load_item
 # reloads for every item and the caller updates first. Empty values aren't
 # written, so an ISO cfg never gets current_version or etag.
 save_update_metadata() {
@@ -197,5 +222,5 @@ save_update_metadata() {
         esac
         [[ -n "$value" ]] && pairs+=("$key=$value")
     done
-    update_cfg "$cfg" "${pairs[@]}"
+    save_state "$cfg" "${pairs[@]}"
 }

@@ -6,7 +6,7 @@ Bash scripts that keep three kinds of downloaded software up to date:
 - **Archipelago custom worlds** (`.apworld` files), including worlds shipped inside a mod's release zip
 - **ISOs on a Ventoy drive**, every download checksum-verified before it replaces anything
 
-Each item is described by a small `key=value` config file that says where its new versions come from: a GitHub or GitLab release, a fixed download URL, a JSON feed, a web server's folder listing, or a dated file name. One command per kind checks its items and installs what changed, and `update-tools` runs all three.
+Each item is described by a small JSON config file that says where its new versions come from: a GitHub or GitLab release, a fixed download URL, a JSON feed, a web server's folder listing, or a dated file name. One command per kind checks its items and installs what changed, and `update-tools` runs all three.
 
 > [!IMPORTANT]
 > **This project was written with AI.** Almost all of the code and documentation was written by AI assistants (Claude by Anthropic, and Grok by xAI), following the author's design, requests and review. The author tested it on their own Linux system, with their own AppImages, Archipelago worlds and Ventoy drive, but it has not been reviewed or tested by anyone else. Read the scripts before running them, try `-c` (check only) first, and keep backups of anything you point it at. It comes with no warranty. `CHANGELOG.md` and the git history credit each change to the user, Claude or Grok.
@@ -17,7 +17,7 @@ On Windows, a PowerShell port of the worlds and ISO modes is in [`windows/`](win
 
 - bash 4.3 or newer, and the usual tools (`awk`, `sed`, `find`, `df`)
 - `curl` for every mode
-- `jq` for AppImages and worlds
+- `jq` (every mode reads its config files with it)
 - `unzip` for worlds (and for AppImages released as zips; `tar` for `.tar.*` ones)
 - `sha256sum` and `sha512sum` for ISOs
 
@@ -83,37 +83,45 @@ make-update-cfg -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x
 
 `-m` is `app`, `apw` or `iso`; the link comes next or after `-u`, then an optional name for the cfg. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next run of that kind's command (or `update-tools`) installs the item.
 
-- **GitHub or GitLab projects:** it takes the latest stable release with something installable (`-l`, the default), or with `-p` the newest release, pre-releases included; the cfg then keeps to that choice (`allow_prereleases=false` or `true`). It ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
+- **GitHub or GitLab projects:** it takes the latest stable release with something installable (`-l`, the default), or with `-p` the newest release, pre-releases included; the cfg then keeps to that choice (`"allow_prereleases": "false"` or `"true"`). It ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
 - **Any other link:** it becomes a fixed download.
-- **ISOs:** it also looks for a checksum file next to the ISO. Set `folder=` to the ISO's folder on the drive afterwards.
+- **ISOs:** it also looks for a checksum file next to the ISO. Set `"folder"` to the ISO's folder on the drive afterwards.
 
 It never overwrites an existing cfg.
 
 ### By hand
 
-Each item has a cfg in its mode's `.cfg/` folder: `NAME.appimage.cfg`, `NAME.apworld.cfg` or `NAME.iso.cfg`. Lines are `key=value`; lines starting with `#` are comments. A cfg is read as data, never run as shell code, and only known keys are accepted.
+Each item has a cfg in its mode's `.cfg/` folder, `NAME.json`: a JSON object whose values are text. The scripts read only the keys below (any other is reported and ignored), and keep what they write themselves under `"state"`. JSON has no comments, so a cfg can hold a `"comment"`, which the scripts ignore; `make-update-cfg` puts the link there.
 
-```ini
-# ~/AppImages/.cfg/dusklight.appimage.cfg
-manager=github
-repo=TwilitRealm/dusklight
-repo_filename=Dusklight-*-linux-x86_64.AppImage
+```jsonc
+// ~/AppImages/.cfg/dusklight.json
+{
+  "manager": "github",
+  "repo": "TwilitRealm/dusklight",
+  "repo_filename": "Dusklight-*-linux-x86_64.AppImage"
+}
 ```
 
-```ini
-# custom_worlds/.cfg/7dtd_world.apworld.cfg
-manager=github
-repo=OrcThrowman/7-Days-to-Die-AP
-repo_filename=*.apworld
+```jsonc
+// custom_worlds/.cfg/7dtd_world.json
+{
+  "manager": "github",
+  "repo": "OrcThrowman/7-Days-to-Die-AP",
+  "repo_filename": "*.apworld"
+}
 ```
 
-```ini
-# .cfg/archlinux.iso.cfg in the ISO folder
-folder=Linux/ArchLinux
-manager=static
-url=https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso
-checksum=sha256sums.txt
+```jsonc
+// .cfg/archlinux.json in the ISO folder
+{
+  "folder": "Linux/ArchLinux",
+  "manager": "static",
+  "url": "https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso",
+  "checksum": "sha256sums.txt"
+}
 ```
+
+(The `//` lines only say where each file goes; they can't be in the file.) In JSON a `\` or `"` inside a value needs a backslash: `"repo_regex": "SoH-.*(\\.appimage|-Linux\\.zip)"`.
 
 Managers and their keys:
 
@@ -136,7 +144,16 @@ ISO cfgs also need:
 
 Worlds can set `apworld_filename` (a glob) to pick one `.apworld` out of a release zip that holds several.
 
-The scripts add their own keys after each check (`current_version`, `installed_file`, `last_checked`, ETags, digests, `iso_hash`). Leave those alone; a cfg without `installed_file` means "not installed yet", so the item is installed on the next run.
+AppImages can set:
+
+| Key | Meaning |
+|---|---|
+| `icon_name` | the icon name the desktop entry uses, for an icon theme that names the app differently |
+| `install_name` | install the AppImage under this name instead of its upstream one (`{name}` is the cfg's name; `.AppImage` is added if missing). An app already installed under another name is renamed on its next run |
+
+An AppImage's desktop entry is built from the `.desktop` file inside it. To use your own instead, put it next to the cfg as `.cfg/NAME.desktop`; `{appimage}` in it stands for the installed AppImage's path (`Exec=env DESKTOPINTEGRATION=1 {appimage} %u`). It's written whenever it changes, on the next run.
+
+The scripts add their own keys under `"state"` after each check (`current_version`, `installed_file`, `last_checked`, ETags, digests, `iso_hash`). Leave those alone; a cfg without `installed_file` means "not installed yet", so the item is installed on the next run.
 
 ## GitHub token
 

@@ -24,24 +24,23 @@ usage() {
         app)
             cat <<EOF
 Usage: ${0##*/} [OPTIONS]
-Check and update the AppImages. Each has a cfg (NAME.appimage.cfg) in the
-folder's .cfg/; one whose AppImage isn't there yet is installed. Desktop
-entries go to ~/.local/share/applications.
+Check and update the AppImages. Each has a cfg (NAME.json) in the folder's
+.cfg/; one whose AppImage isn't there yet is installed. Desktop entries go to
+~/.local/share/applications, from .cfg/NAME.desktop if there is one.
 EOF
             folders="  app_dir=          $app" ;;
         apw)
             cat <<EOF
 Usage: ${0##*/} [OPTIONS]
-Check and update the Archipelago custom worlds. Each has a cfg
-(NAME.apworld.cfg) in the folder's .cfg/; one whose world isn't there yet is
-installed.
+Check and update the Archipelago custom worlds. Each has a cfg (NAME.json)
+in the folder's .cfg/; one whose world isn't there yet is installed.
 EOF
             folders="  apw_dir=          $apw" ;;
         iso)
             cat <<EOF
 Usage: ${0##*/} [OPTIONS]
-Check and update the ISOs on a Ventoy drive. Each has a cfg (NAME.iso.cfg) in
-the root's .cfg/, whose folder= names the ISO's folder; one whose ISO isn't
+Check and update the ISOs on a Ventoy drive. Each has a cfg (NAME.json) in
+the root's .cfg/, whose "folder" names the ISO's folder; one whose ISO isn't
 there yet is installed. Every download is checksum-verified before it
 replaces anything.
 EOF
