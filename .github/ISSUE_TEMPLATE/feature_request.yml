@@ -1,0 +1,42 @@
+name: Feature request
+description: An idea for something update-tools could do, or do differently
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part?
+      options:
+        - AppImages
+        - Archipelago worlds
+        - ISOs
+        - The menu
+        - make-update-cfg
+        - Windows port
+        - A new kind of item, or a new manager (where updates come from)
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like it to do?
+      placeholder: |
+        Let make-update-cfg write a dirlist cfg from a mirror's folder link.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why? What does it solve for you?
+      description: The situation that made you want this; an example item (its link, or its cfg without private paths) helps a lot.
+    validations:
+      required: true
+
+  - type: textarea
+    id: instead
+    attributes:
+      label: What do you do now instead?
+      description: Optional. A workaround, or something you tried.
