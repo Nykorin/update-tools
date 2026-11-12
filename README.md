@@ -6,7 +6,7 @@ Bash scripts that keep three kinds of downloaded software up to date:
 - **Archipelago custom worlds** (`.apworld` files), including worlds shipped inside a mod's release zip
 - **ISOs on a Ventoy drive**, every download checksum-verified before it replaces anything
 
-Each item is described by a small JSON config file that says where its new versions come from: a GitHub or GitLab release, a fixed download URL, a JSON feed, a web server's folder listing, or a dated file name. One command per kind checks its items and installs what changed, and `update-tools` runs all three.
+Each item is described by a small JSON config file that says where its new versions come from: a GitHub or GitLab release, a fixed download URL, a JSON feed, a web server's folder listing, or a dated file name. One command, `update-tools`, checks the items and installs what changed: on a terminal it opens a menu to pick what to check and which updates to download, and `-m` runs one kind (or all three) without it.
 
 > [!IMPORTANT]
 > **This project was written with AI.** Almost all of the code and documentation was written by AI assistants (Claude by Anthropic, and Grok by xAI), following the author's design, requests and review. The author tested it on their own Linux system, with their own AppImages, Archipelago worlds and Ventoy drive, but it has not been reviewed or tested by anyone else. Read the scripts before running them, try `-c` (check only) first, and keep backups of anything you point it at. It comes with no warranty. `CHANGELOG.md` and the git history credit each change to the user, Claude or Grok.

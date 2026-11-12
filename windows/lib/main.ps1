@@ -44,7 +44,7 @@ function Write-Summary($T) {
         Say "⬆ $($T.available.Count) $word available: $($T.available -join ', ')"
     }
     if ($T.problems.Count) { Say "⚠ $($T.problems.Count) skipped or failed: $($T.problems -join ', ')" }
-    if ($T.unchecked) { Say "⚠ $($T.unchecked) not checked" }
+    if ($T.unchecked) { Say "⚠ $($T.unchecked) not checked (GitHub rate limit)" }
 }
 
 # One cfg: check it, and update it if needed. The same steps for every mode,
@@ -211,12 +211,13 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
             $script:Outcome = ''
             $rc = Invoke-UpdateItem $cfgs[$i] $i $cfgs.Count
             if ($script:DebugOn) { Say ("  · $($script:Label): took {0:N2}s" -f $watch.Elapsed.TotalSeconds) }
+            # a GitHub rate limit: this item wasn't checked either
+            if ($rc -eq 2) { $tally.unchecked = $cfgs.Count - $i; break }
             switch ($script:Outcome) {
                 'available' { $tally.available.Add($script:Label) }
                 ''          { $tally.problems.Add($script:Label) }
                 default     { $tally[$script:Outcome]++ }
             }
-            if ($rc -eq 2) { $tally.unchecked = $cfgs.Count - $i - 1; break }
         }
         Write-Summary $tally
     } finally {

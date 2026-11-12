@@ -106,6 +106,11 @@ run_items() {
         commit_final
         ITEM_OUTCOME=""
         timed "" process_item "$i"; rc=$?
+        if (( rc == 2 )); then
+            # a GitHub rate limit: this item wasn't checked either
+            unchecked=$(( ${#cfg_files[@]} - i ))
+            break
+        fi
         case "$ITEM_OUTCOME" in
             updated)   (( ++updated )) ;;
             installed) (( ++installed )) ;;
@@ -119,10 +124,6 @@ run_items() {
                 ;;
             *)         problems+=("$name") ;;
         esac
-        if (( rc == 2 )); then
-            unchecked=$(( ${#cfg_files[@]} - i - 1 ))
-            break
-        fi
     done
     commit_final
     report_summary
@@ -160,7 +161,7 @@ report_summary() {
         printf -v line '%s, ' "${problems[@]}"
         summary_say "⚠ ${#problems[@]} skipped or failed: ${line%, }"
     fi
-    (( unchecked )) && summary_say "⚠ $unchecked not checked"
+    (( unchecked )) && summary_say "⚠ $unchecked not checked (GitHub rate limit)"
     return 0
 }
 
