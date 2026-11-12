@@ -84,15 +84,29 @@ run_menu() {
     ALWAYS_HEADINGS=1
     rc=0
     # the check: nothing is downloaded or written; what it finds is offered
-    # below (with -c, the check is all there is)
+    # below on a cleared screen, with each kind's summary and the log of the
+    # check (with -c, the check is all there is, and stays on screen)
     if (( ${#check[@]} )); then
-        AVAILABLE_FILE=$(mktemp)
-        # shellcheck disable=SC2064  # the file's name now, not at exit
-        trap "rm -f '$AVAILABLE_FILE'" EXIT
+        local log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/update-tools" summary="" t prev=""
+        mkdir -p "$log_dir"
+        RUN_LOG="$log_dir/check.log"
+        : > "$RUN_LOG"
+        AVAILABLE_FILE=$(mktemp) SUMMARY_FILE=$(mktemp)
+        # shellcheck disable=SC2064  # the files' names now, not at exit
+        trap "rm -f '$AVAILABLE_FILE' '$SUMMARY_FILE'" EXIT
         local saved_check="$check_only"
         check_only=true HEADING_NOTE="checking for updates"
         run_modes "${check[@]}" || rc=1
         check_only="$saved_check" HEADING_NOTE=""
+
+        # one line per kind: its summary lines joined
+        while IFS=$'\t' read -r t line; do
+            if [[ "$t" == "$prev" ]]; then summary+=" · $line"; else summary+=$'\n'"$t: $line"; fi
+            prev="$t"
+        done < "$SUMMARY_FILE"
+        summary+=$'\n'"Log of the check: $(tilde "$RUN_LOG")"
+        rm -f "$SUMMARY_FILE"; SUMMARY_FILE=""
+        RUN_LOG=""
 
         lines=()
         while IFS=$'\t' read -r m n line; do
@@ -101,21 +115,32 @@ run_menu() {
         done < "$AVAILABLE_FILE"
         rm -f "$AVAILABLE_FILE"; AVAILABLE_FILE=""
 
-        if [[ "$check_only" == true ]]; then
-            :
-        elif (( ${#lines[@]} == 0 )); then
-            if (( ${#runs[@]} == 0 )); then
-                paint line "✓ nothing to update"
+        if [[ "$check_only" != true ]]; then
+            # the check is in the log now
+            printf '\033[H\033[2J'
+            n=0
+            if (( ${#lines[@]} )); then
+                while IFS=$'\t' read -r m f; do
+                    [[ -n "$m" ]] || continue
+                    [[ " ${runs[*]} " == *" $m "* ]] || runs+=("$m")
+                    MODE_ITEMS["$m"]+="$f"$'\n'
+                    (( ++n ))
+                done < <(printf '%s\n' "${lines[@]}" |
+                    menu_fzf --with-nth=3.. --bind 'load:select-all' \
+                        --header="Updates to download  (Tab: unmark, Enter: download, Esc: none)$summary" |
+                    cut -f1,2)
+            fi
+            # nothing to download: the check's results stay on screen
+            if (( n == 0 )); then
+                while IFS= read -r line; do
+                    [[ -n "$line" ]] || continue
+                    paint line "$line"
+                    printf '%s\n' "$line"
+                done <<<"${summary#$'\n'}"
+                if (( ${#lines[@]} )); then line="nothing downloaded"; else line="✓ nothing to update"; fi
+                paint line "$line"
                 printf '%s\n' "$line"
             fi
-        else
-            while IFS=$'\t' read -r m n; do
-                [[ -n "$m" ]] || continue
-                [[ " ${runs[*]} " == *" $m "* ]] || runs+=("$m")
-                MODE_ITEMS["$m"]+="$n"$'\n'
-            done < <(printf '%s\n' "${lines[@]}" |
-                menu_fzf --with-nth=3.. --bind 'load:select-all' \
-                    --header="Updates to download  (Tab: unmark, Enter: download, Esc: none)" | cut -f1,2)
         fi
     fi
 

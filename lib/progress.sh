@@ -63,8 +63,16 @@ block_draw() {
 
 block_redraw() { block_erase; block_draw; }
 
+# Copies a permanent line, plain, to RUN_LOG when the menu keeps one (its
+# check's output, cleared from the screen afterwards).
+run_log() {
+    [[ -n "${RUN_LOG:-}" ]] && printf '%s\n' "$*" >> "$RUN_LOG"
+    return 0
+}
+
 say() {
     local text
+    run_log "$*"
     paint text "$*"
     block_erase
     printf '%s\n' "$text"
@@ -81,6 +89,7 @@ status() {
 }
 
 status_final() {
+    run_log "$PROGRESS_LABEL $1"
     FINAL_STATUS="$1"
     status "$1"
 }

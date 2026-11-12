@@ -65,7 +65,7 @@ Without `-m`, on a terminal, `update-tools` opens a menu ([fzf](https://github.c
 
 1. **What to update:** the kinds whose folder is there (Tab marks several, Enter takes them, Esc quits). Kinds that can't run are named above the list, with the reason.
 2. **For each kind:** the first line, *check all for updates*, checks every item without downloading anything; or mark single items to update just those. Esc goes back.
-3. **After the check:** a list of the updates found, all marked. Unmark what you don't want and press Enter to download the rest, or Esc to download nothing. With `-c`, the run stops after the check.
+3. **After the check:** the screen is cleared and a list of the updates found opens, all marked, with each kind's summary above it. Unmark what you don't want and press Enter to download the rest, or Esc to download nothing. The check's full output is in `~/.cache/update-tools/check.log` (or under `$XDG_CACHE_HOME`), kept until the next check. With `-c`, the run stops after the check and its output stays on screen.
 
 Without a terminal (cron, a pipe) or without fzf, it runs all three, as `-m all` does. Several kinds run in order, each under a heading. One that can't run (its folder missing, or a command it needs) prints why and the others still run; the run then ends with a list of what was skipped.
 

@@ -129,6 +129,14 @@ run_items() {
     return 0
 }
 
+# A summary line: printed, and kept for the menu's download list (its header)
+# when the menu asks for it with SUMMARY_FILE.
+summary_say() {
+    say "$1"
+    [[ -n "${SUMMARY_FILE:-}" ]] && printf '%s\t%s\n' "$ITEM_TITLE" "$1" >> "$SUMMARY_FILE"
+    return 0
+}
+
 # The mode's summary, after its last item: what went well in one line, then the
 # items that need a look, by name, so a long run's failures can't hide in the
 # scrollback. Reads run_items' tallies.
@@ -141,18 +149,18 @@ report_summary() {
     (( recent ))    && parts+=("$recent checked recently")
     if (( ${#parts[@]} )); then
         printf -v line '%s, ' "${parts[@]}"
-        say "✓ ${line%, }"
+        summary_say "✓ ${line%, }"
     fi
     if (( ${#available[@]} )); then
         printf -v line '%s, ' "${available[@]}"
         word=updates; (( ${#available[@]} == 1 )) && word=update
-        say "⬆ ${#available[@]} $word available: ${line%, }"
+        summary_say "⬆ ${#available[@]} $word available: ${line%, }"
     fi
     if (( ${#problems[@]} )); then
         printf -v line '%s, ' "${problems[@]}"
-        say "⚠ ${#problems[@]} skipped or failed: ${line%, }"
+        summary_say "⚠ ${#problems[@]} skipped or failed: ${line%, }"
     fi
-    (( unchecked )) && say "⚠ $unchecked not checked"
+    (( unchecked )) && summary_say "⚠ $unchecked not checked"
     return 0
 }
 
@@ -387,19 +395,31 @@ ALWAYS_HEADINGS=0 HEADING_NOTE=""
 # one (or the menu asks for it), carrying on past one that can't run. Returns
 # 1 if any couldn't, after a ⚠ skipped: line when there were several.
 run_modes() {
-    local m list
+    local m list rc
     local -a skipped=()
     for m in "$@"; do
         ITEM_TYPE="$m"; item_settings
         if (( $# > 1 || ALWAYS_HEADINGS )); then
             printf '%s▶ %s%s%s\n' "$C_BOLD$C_CYAN" "$ITEM_TITLE" "${HEADING_NOTE:+: $HEADING_NOTE}" "$C_R"
+            run_log "▶ $ITEM_TITLE${HEADING_NOTE:+: $HEADING_NOTE}"
         fi
-        ( run_mode "$m" ) || skipped+=("$ITEM_TITLE")
+        # the menu's check keeps a log: a mode's error (it couldn't run) too
+        if [[ -n "${RUN_LOG:-}" ]]; then
+            ( run_mode "$m" ) 2> >(tee -a "$RUN_LOG" >&2); rc=$?
+        else
+            ( run_mode "$m" ); rc=$?
+        fi
+        if (( rc )); then
+            skipped+=("$ITEM_TITLE")
+            [[ -n "${SUMMARY_FILE:-}" ]] && printf '%s\t%s\n' "$ITEM_TITLE" "⚠ couldn't run" >> "$SUMMARY_FILE"
+        fi
     done
     (( ${#skipped[@]} == 0 )) && return 0
     if (( $# > 1 )); then
         printf -v list '%s, ' "${skipped[@]}"
-        paint list "⚠ skipped: ${list%, }"
+        list="⚠ skipped: ${list%, }"
+        run_log "$list"
+        paint list "$list"
         printf '%s\n' "$list"
     fi
     return 1
