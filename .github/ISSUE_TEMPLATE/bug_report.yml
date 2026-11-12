@@ -1,0 +1,82 @@
+name: Bug report
+description: Something went wrong while checking or updating an item, or writing a cfg
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Before you paste anything below: **never include a GitHub token**, and replace your home folder and other private paths with `~` or `…` (session logs and cfgs contain full paths).
+
+  - type: dropdown
+    id: part
+    attributes:
+      label: Which part?
+      options:
+        - AppImages (update-tools -m app)
+        - Archipelago worlds (update-tools -m apw)
+        - ISOs (update-tools -m iso)
+        - The menu (update-tools without -m)
+        - make-update-cfg
+        - Windows port (update-tools.ps1 / make-update-cfg.ps1)
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+      placeholder: |
+        Ran the ISOs check; fedora-kde was reported as up to date, but Fedora 45 is out.
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: The command you ran
+      placeholder: update-tools -m iso -c
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Which version?
+      description: "The project has no release numbers: give the commit, from `git -C <your clone> rev-parse --short HEAD`."
+      placeholder: b88c127
+    validations:
+      required: true
+
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: "Your OS, and `bash --version` (first line), or for the Windows port `$PSVersionTable.PSVersion`."
+      placeholder: CachyOS, GNU bash 5.3.3
+    validations:
+      required: true
+
+  - type: textarea
+    id: cfg
+    attributes:
+      label: The item's cfg
+      description: "The item's `.update-tools/db/NAME.json` (and `NAME.desktop` for an AppImage, if it has one). Leave out what's private."
+      render: json
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Session log, or the output
+      description: |
+        The run's session log: `~/.cache/update-tools/session-DATE_TIME.log` (Windows: `%LOCALAPPDATA%\update-tools\`). If the problem is about a decision (up to date or not, which file was picked), run the same command again with `-d` and paste that output too.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I removed tokens and private paths from what I pasted.
+          required: true
+        - label: The problem still happens on the latest commit of `main`.
