@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # update-tools: checks and updates AppImages, Archipelago worlds and ISOs:
-# runs update-appimages, update-apworlds and update-isos in turn.
-# Run with -h for the help; each of the three can also be run on its own.
+# -m picks one kind (or all); without it, a menu on a terminal (fzf).
+# Run with -h for the help.
 set -uo pipefail
 
 # the script's real folder, through any symlink, so lib/ is found next to it
@@ -9,4 +9,4 @@ SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
 # shellcheck source=lib/load.sh
 source "$SCRIPT_DIR/lib/load.sh" || exit 1
 
-update_tools "" "$@"
+update_tools "$@"

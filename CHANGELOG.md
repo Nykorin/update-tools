@@ -6,6 +6,17 @@ Contributors: user (design & direction), Claude (original scripts), Grok (modula
 
 Each bullet starts with the file it touches. "both updaters" means `update-appimages.sh` and `update-apworlds.sh`.
 
+## [2026-11-11]
+
+### Added
+- **update-tools, lib/menu.sh, lib/main.sh, lib/load.sh, README.md:** Without `-m`, on a terminal with `fzf`, `update-tools` opens a menu. Step 1 picks the kinds (those whose folder is missing or not set are named above the list, with the reason). Step 2, for each kind, either checks all its items (the first line, the default) or runs single marked items directly. After the check, which downloads and writes nothing, a list of the updates found, all marked: Enter downloads what's still marked, Esc nothing; with `-c` the run ends after the check. Esc in step 2 goes back to step 1. Each pass runs under its own heading (`▶ ISOs: checking for updates`, `▶ ISOs: updating`) with the usual summary. `run_mode` takes the menu's choice of items (`MODE_ITEMS`), and a check writes each update it finds to the menu's list (`AVAILABLE_FILE`) *(Claude, directed by user)*
+
+### Changed
+- **update-tools, lib/cli.sh, lib/main.sh, make-update-cfg, README.md:** `-m MODE` picks what to update again (`app`, `apw`, `iso`, or `all` for all three without the menu); without a terminal, or without `fzf`, `update-tools` runs all three as before. `-r DIR` works only with `-m app`, `apw` or `iso`. One help text again, with the menu, the modes and `-m`. `make-update-cfg`'s closing hint names `update-tools -m apw -c` *(Claude, directed by user)*
+
+### Removed
+- **update-appimages, update-apworlds, update-isos:** The three per-kind commands (2026-11-06); `update-tools -m app`, `-m apw` and `-m iso` replace them *(Claude, directed by user)*
+
 ## [2026-11-08]
 
 ### Added

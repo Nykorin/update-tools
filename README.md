@@ -20,6 +20,7 @@ On Windows, a PowerShell port of the worlds and ISO modes is in [`windows/`](win
 - `jq` (every mode reads its config files with it)
 - `unzip` for worlds (and for AppImages released as zips; `tar` for `.tar.*` ones)
 - `sha256sum` and `sha512sum` for ISOs
+- `fzf`, optional, for the menu
 
 Each command checks for what it needs and says what's missing.
 
@@ -28,12 +29,12 @@ Each command checks for what it needs and says what's missing.
 ```sh
 git clone https://github.com/Nykorin/update-tools.git
 mkdir -p ~/.local/bin
-for c in update-tools update-appimages update-apworlds update-isos make-update-cfg; do
+for c in update-tools make-update-cfg; do
     ln -s "$PWD/update-tools/$c" ~/.local/bin/"$c"
 done
 ```
 
-Every command finds its `lib/` folder through the symlink, so they can be linked from anywhere on your `PATH`.
+Both commands find their `lib/` folder through the symlink, so they can be linked from anywhere on your `PATH`.
 
 ### Settings
 
@@ -48,24 +49,32 @@ skip_checked=on
 skip_hours=24
 ```
 
-The file is read as `key=value` data, never run as shell code (comments go on their own lines); a leading `~` or `$HOME` is expanded. AppImages default to `~/AppImages`. Worlds and ISOs have no default: until their key is set, their mode stops with a message naming it. `-r DIR` overrides the folder for one run of `update-appimages`, `update-apworlds` or `update-isos`, and `-h` lists the folders in use.
+The file is read as `key=value` data, never run as shell code (comments go on their own lines); a leading `~` or `$HOME` is expanded. AppImages default to `~/AppImages`. Worlds and ISOs have no default: until their key is set, their mode stops with a message naming it. `-m MODE -r DIR` overrides a mode's folder for one run, and `-h` lists the folders in use.
 
 ## Usage
 
 ```sh
-update-appimages             # update the AppImages
-update-apworlds -c           # only check the worlds, download nothing
-update-isos -r /run/media/me/Ventoy
-update-tools                 # all three in turn
+update-tools                 # the menu (on a terminal, with fzf)
+update-tools -m apw          # update the worlds
+update-tools -m iso -c       # only check the ISOs, download nothing
+update-tools -m iso -r /run/media/me/Ventoy
+update-tools -m all          # all three in turn, no menu
 ```
 
-`update-tools` runs `update-appimages`, `update-apworlds` and `update-isos` in that order, each under a heading. One that can't run (its folder missing, or a command it needs) prints why and the others still run; the run then ends with a list of what was skipped.
+Without `-m`, on a terminal, `update-tools` opens a menu ([fzf](https://github.com/junegunn/fzf)):
+
+1. **What to update:** the kinds whose folder is there (Tab marks several, Enter takes them, Esc quits). Kinds that can't run are named above the list, with the reason.
+2. **For each kind:** the first line, *check all for updates*, checks every item without downloading anything; or mark single items to update just those. Esc goes back.
+3. **After the check:** a list of the updates found, all marked. Unmark what you don't want and press Enter to download the rest, or Esc to download nothing. With `-c`, the run stops after the check.
+
+Without a terminal (cron, a pipe) or without fzf, it runs all three, as `-m all` does. Several kinds run in order, each under a heading. One that can't run (its folder missing, or a command it needs) prints why and the others still run; the run then ends with a list of what was skipped.
 
 | Option | Meaning |
 |---|---|
+| `-m`, `--mode MODE` | `app`, `apw`, `iso` or `all`; skips the menu |
 | `-c`, `--check` | look up and compare, then report what would be updated; downloads and writes nothing |
 | `-f`, `--force` | check items checked within `skip_hours` too; for AppImages, also rebuild each desktop entry and icon |
-| `-r`, `--root DIR` | use DIR instead of the folder set in the settings (not with `update-tools`) |
+| `-r`, `--root DIR` | use DIR instead of the folder set in the settings (only with `-m app`, `apw` or `iso`) |
 | `-d`, `--debug` | explain each decision and time each item (or `DEBUG=1`) |
 | `-h`, `--help` | show the help |
 
@@ -81,7 +90,7 @@ make-update-cfg -m apw -p https://github.com/OrcThrowman/7-Days-to-Die-AP
 make-update-cfg -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
 ```
 
-`-m` is `app`, `apw` or `iso`; the link comes next or after `-u`, then an optional name for the cfg. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next run of that kind's command (or `update-tools`) installs the item.
+`-m` is `app`, `apw` or `iso`; the link comes next or after `-u`, then an optional name for the cfg. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next `update-tools` run for that kind installs the item.
 
 - **GitHub or GitLab projects:** it takes the latest stable release with something installable (`-l`, the default), or with `-p` the newest release, pre-releases included; the cfg then keeps to that choice (`"allow_prereleases": "false"` or `"true"`). It ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
 - **Any other link:** it becomes a fixed download.
@@ -182,13 +191,11 @@ Put a token (no scopes needed) in `$GITHUB_TOKEN`, or on the first line of `~/.c
 ## Layout
 
 ```
-update-tools        runs the three below in turn
-update-appimages    updates the AppImages
-update-apworlds     updates the Archipelago worlds
-update-isos         updates the ISOs
+update-tools        updates AppImages, worlds and ISOs (-m, or the menu)
 make-update-cfg     writes a new item's cfg from a link
 lib/load.sh         loads the shared libraries
-lib/main.sh         the commands, the mode loop and the one process_item every mode shares
+lib/main.sh         the command, the mode loop and the one process_item every mode shares
+lib/menu.sh         the fzf menu
 lib/managers.sh     github, gitlab, static, jsonfeed, dirlist, dateprobe
 lib/appimages.sh    AppImage hooks: archives, desktop entries, icons
 lib/apworlds.sh     world hooks: zip checks, release zips with several worlds

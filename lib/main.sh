@@ -7,7 +7,7 @@
 # all three.
 # SC2154: cfg keys and manager results are assigned outside this file.
 
-# Each mode's settings, by ITEM_TYPE: ITEM_CMD (its command), ITEM_TITLE (its
+# Each mode's settings, by ITEM_TYPE: ITEM_CMD (the command for it), ITEM_TITLE (its
 # heading when update-tools runs all three),
 # ITEM_EXT (its files' extension), ITEM_MODE (for installed files;
 # empty leaves the mode alone), DEFAULT_DIR (from the settings file; empty when it
@@ -19,7 +19,7 @@ item_settings() {
     load_settings
     case "$ITEM_TYPE" in
         app)
-            ITEM_CMD="update-appimages"
+            ITEM_CMD="update-tools -m app"
             ITEM_TITLE="AppImages"
             ITEM_EXT="appimage"
             ITEM_MODE="755"
@@ -30,7 +30,7 @@ item_settings() {
             ;;
 
         apw)
-            ITEM_CMD="update-apworlds"
+            ITEM_CMD="update-tools -m apw"
             ITEM_TITLE="Archipelago worlds"
             ITEM_EXT="apworld"
             ITEM_MODE="644"
@@ -41,7 +41,7 @@ item_settings() {
             ;;
 
         iso)
-            ITEM_CMD="update-isos"
+            ITEM_CMD="update-tools -m iso"
             ITEM_TITLE="ISOs"
             ITEM_EXT="iso"
             # exFAT has no modes
@@ -111,7 +111,12 @@ run_items() {
             installed) (( ++installed )) ;;
             current)   (( ++current )) ;;
             recent)    (( ++recent )) ;;
-            available) available+=("$name") ;;
+            available)
+                available+=("$name")
+                # the menu's list of updates to download
+                [[ -n "${AVAILABLE_FILE:-}" ]] &&
+                    printf '%s\t%s\t%s\n' "$ITEM_TYPE" "$name" "$ITEM_SHOWN" >> "$AVAILABLE_FILE"
+                ;;
             *)         problems+=("$name") ;;
         esac
         if (( rc == 2 )); then
@@ -238,7 +243,8 @@ process_item() {
 
     # -c: report it, download and write nothing
     if [[ "$check_only" == true ]]; then
-        status_final "⬆ update available: $(shown_version "$asset_name")"
+        ITEM_SHOWN=$(shown_version "$asset_name")
+        status_final "⬆ update available: $ITEM_SHOWN"
         ITEM_OUTCOME=available
         return 0
     fi
@@ -322,12 +328,12 @@ run_mode() {
     dir="${ROOT_ARG:-$DEFAULT_DIR}"
     dir="${dir%/}"
     if [[ -z "$dir" ]]; then
-        [[ -z "$RUN_TYPE" ]] && ROOT_HINT=""
+        [[ "$RUN_TYPE" == "$ITEM_TYPE" ]] || ROOT_HINT=""
         echo "ERROR: no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$SETTINGS_FILE").${ROOT_HINT:+ $ROOT_HINT}" >&2
         exit 1
     fi
     if [[ ! -d "$dir" ]]; then
-        [[ -z "$RUN_TYPE" ]] && ROOT_HINT=""
+        [[ "$RUN_TYPE" == "$ITEM_TYPE" ]] || ROOT_HINT=""
         echo "ERROR: $dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}${ROOT_HINT:+ $ROOT_HINT}" >&2
         exit 1
     fi
@@ -345,7 +351,16 @@ run_mode() {
     start_run
 
     shopt -s nullglob
-    local cfg_files=("$CFG_DIR"/*.json)
+    local cfg_files=("$CFG_DIR"/*.json) f
+    # the menu's choice of single items, by name (empty: all of them)
+    if [[ -n "${MODE_ITEMS[$ITEM_TYPE]:-}" ]]; then
+        local -a chosen=()
+        for f in "${cfg_files[@]}"; do
+            f="${f##*/}"
+            [[ $'\n'"${MODE_ITEMS[$ITEM_TYPE]}"$'\n' == *$'\n'"${f%.json}"$'\n'* ]] && chosen+=("$CFG_DIR/$f")
+        done
+        cfg_files=("${chosen[@]}")
+    fi
     # the layout from before 2026-11-07 isn't read any more
     [[ -d "$dir/.cfg" ]] && say "⚠ $dir/.cfg is ignored: cfgs are NAME.json in .update-tools/db now"
     if (( ${#cfg_files[@]} == 0 )); then
@@ -362,34 +377,52 @@ run_mode() {
     finish_progress
 }
 
-# The commands: update_tools TYPE ARGS… for update-appimages, update-apworlds
-# and update-isos, update_tools "" ARGS… for update-tools, which runs all
-# three in turn, carries on past one that can't run, and exits 1 at the end if
-# any didn't.
+# The menu's choice of single items per mode (newline-separated names), read by
+# run_mode; a mode not in it runs all its items.
+declare -A MODE_ITEMS=()
+# Set by the menu: a heading for every mode, with HEADING_NOTE after the title.
+ALWAYS_HEADINGS=0 HEADING_NOTE=""
+
+# Runs each mode in its own subshell, under a ▶ heading when there's more than
+# one (or the menu asks for it), carrying on past one that can't run. Returns
+# 1 if any couldn't, after a ⚠ skipped: line when there were several.
+run_modes() {
+    local m list
+    local -a skipped=()
+    for m in "$@"; do
+        ITEM_TYPE="$m"; item_settings
+        if (( $# > 1 || ALWAYS_HEADINGS )); then
+            printf '%s▶ %s%s%s\n' "$C_BOLD$C_CYAN" "$ITEM_TITLE" "${HEADING_NOTE:+: $HEADING_NOTE}" "$C_R"
+        fi
+        ( run_mode "$m" ) || skipped+=("$ITEM_TITLE")
+    done
+    (( ${#skipped[@]} == 0 )) && return 0
+    if (( $# > 1 )); then
+        printf -v list '%s, ' "${skipped[@]}"
+        paint list "⚠ skipped: ${list%, }"
+        printf '%s\n' "$list"
+    fi
+    return 1
+}
+
+# The command, update-tools: -m picks the mode (all for all three); without it,
+# the menu on a terminal with fzf (menu.sh), else all three. Exits 1 if a mode
+# couldn't run.
 # shellcheck disable=SC2034  # force, check_only, NOW and checked_at are read by the modes
 update_tools() {
-    RUN_TYPE="$1"; shift
     force=false check_only=false
     parse_flags "$@"
     # one time for the whole run: what last_checked saves, and what it's compared with
     printf -v NOW '%(%s)T' -1
     printf -v checked_at '%(%FT%H:%M)T' "$NOW"
 
-    local -a modes skipped=()
-    local m
-    if [[ -n "$RUN_TYPE" ]]; then modes=("$RUN_TYPE"); else modes=(app apw iso); fi
-    for m in "${modes[@]}"; do
-        ITEM_TYPE="$m"; item_settings
-        (( ${#modes[@]} > 1 )) && printf '%s▶ %s%s\n' "$C_BOLD$C_CYAN" "$ITEM_TITLE" "$C_R"
-        ( run_mode "$m" ) || skipped+=("$ITEM_TITLE")
-    done
-
-    (( ${#skipped[@]} == 0 )) && exit 0
-    if (( ${#modes[@]} > 1 )); then
-        local list
-        printf -v list '%s, ' "${skipped[@]}"
-        paint list "⚠ skipped: ${list%, }"
-        printf '%s\n' "$list"
+    if [[ -z "$RUN_TYPE" ]] && menu_available; then
+        run_menu
+        exit
     fi
-    exit 1
+    case "$RUN_TYPE" in
+        app|apw|iso) run_modes "$RUN_TYPE" ;;
+        *)           run_modes app apw iso ;;
+    esac
+    exit
 }
