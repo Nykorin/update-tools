@@ -75,6 +75,12 @@ $script:DebugOn = [bool]$Debug -or ($env:DEBUG -and $env:DEBUG -ne '0')
 # one time for the whole run: what last_checked saves, and what it's compared with
 $script:Now = Get-Date
 $script:CheckedAt = $script:Now.ToString("yyyy-MM-dd'T'HH:mm")
+# the arguments as given, for the log's first line
+$given = @(foreach ($k in $PSBoundParameters.Keys) {
+    $v = $PSBoundParameters[$k]
+    if ($v -is [switch]) { "-$k" } else { "-$k $v" }
+})
+Start-Log ($given -join ' ')
 
 $skipped = @()
 foreach ($m in $modes) {

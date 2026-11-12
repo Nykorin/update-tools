@@ -10,7 +10,7 @@ AppImages are Linux-only, so that mode isn't here. `make-update-cfg.ps1` writes 
 > [!IMPORTANT]
 > **This port was written with AI** (Claude by Anthropic), like the rest of the project. It was tested with PowerShell 7 on Linux, against the same cases as the bash version and with identical results, but **not yet on Windows itself** or in Windows PowerShell 5.1. Read it before running it, start with `-c` (check only), and keep backups of anything you point it at. It comes with no warranty.
 
-It uses the same cfg files and keys as the bash version, so a cfg works in either. Everything else, from the managers to the rules for when an item is up to date, also matches it; see the main [README](../README.md) for the cfg format and the managers. One difference: the bash version's menu (fzf) isn't ported, so here `-m` is always needed.
+It uses the same cfg files and keys as the bash version, so a cfg works in either. Everything else, from the managers to the rules for when an item is up to date, also matches it; see the main [README](../README.md) for the cfg format and the managers. One difference: the bash version's menu (fzf) isn't ported, so here `-m` is always needed. Session logs, as in the bash version, go to `%LOCALAPPDATA%\update-tools\` (the newest 10 are kept).
 
 ## Requirements
 

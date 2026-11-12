@@ -404,7 +404,7 @@ run_modes() {
             printf '%s▶ %s%s%s\n' "$C_BOLD$C_CYAN" "$ITEM_TITLE" "${HEADING_NOTE:+: $HEADING_NOTE}" "$C_R"
             run_log "▶ $ITEM_TITLE${HEADING_NOTE:+: $HEADING_NOTE}"
         fi
-        # the menu's check keeps a log: a mode's error (it couldn't run) too
+        # a mode's error (it couldn't run) goes to the session log too
         if [[ -n "${RUN_LOG:-}" ]]; then
             ( run_mode "$m" ) 2> >(tee -a "$RUN_LOG" >&2); rc=$?
         else
@@ -426,6 +426,27 @@ run_modes() {
     return 1
 }
 
+# The session log, one per run: RUN_LOG, in the cache folder, named by the
+# start time; it begins with the date and the arguments, and gets every
+# permanent line (run_log). Only the newest LOGS_KEPT stay. Without a writable
+# cache folder the run goes on without one.
+LOGS_KEPT=10
+start_log() {
+    local dir="${XDG_CACHE_HOME:-$HOME/.cache}/update-tools" stamp
+    local -a logs
+    printf -v stamp '%(%F_%H-%M-%S)T' "$NOW"
+    if ! { mkdir -p "$dir" && : > "$dir/session-$stamp.log"; } 2>/dev/null; then
+        echo "${0##*/}: can't write a session log in $(tilde "$dir"), going on without one" >&2
+        return 0
+    fi
+    RUN_LOG="$dir/session-$stamp.log"
+    printf -v stamp '%(%F %H:%M:%S)T' "$NOW"
+    run_log "update-tools${*:+ $*}, $stamp"
+    logs=("$dir"/session-*.log)
+    (( ${#logs[@]} > LOGS_KEPT )) && rm -f "${logs[@]:0:${#logs[@]}-LOGS_KEPT}"
+    return 0
+}
+
 # The command, update-tools: -m picks the mode (all for all three); without it,
 # the menu on a terminal with fzf (menu.sh), else all three. Exits 1 if a mode
 # couldn't run.
@@ -436,6 +457,7 @@ update_tools() {
     # one time for the whole run: what last_checked saves, and what it's compared with
     printf -v NOW '%(%s)T' -1
     printf -v checked_at '%(%FT%H:%M)T' "$NOW"
+    start_log "$@"
 
     if [[ -z "$RUN_TYPE" ]] && menu_available; then
         run_menu

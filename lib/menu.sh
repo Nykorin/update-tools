@@ -84,13 +84,10 @@ run_menu() {
     ALWAYS_HEADINGS=1
     rc=0
     # the check: nothing is downloaded or written; what it finds is offered
-    # below on a cleared screen, with each kind's summary and the log of the
-    # check (with -c, the check is all there is, and stays on screen)
+    # below on a cleared screen, with each kind's summary and the session log
+    # (with -c, the check is all there is, and stays on screen)
     if (( ${#check[@]} )); then
-        local log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/update-tools" summary="" t prev=""
-        mkdir -p "$log_dir"
-        RUN_LOG="$log_dir/check.log"
-        : > "$RUN_LOG"
+        local summary="" t prev=""
         AVAILABLE_FILE=$(mktemp) SUMMARY_FILE=$(mktemp)
         # shellcheck disable=SC2064  # the files' names now, not at exit
         trap "rm -f '$AVAILABLE_FILE' '$SUMMARY_FILE'" EXIT
@@ -104,9 +101,8 @@ run_menu() {
             if [[ "$t" == "$prev" ]]; then summary+=" · $line"; else summary+=$'\n'"$t: $line"; fi
             prev="$t"
         done < "$SUMMARY_FILE"
-        summary+=$'\n'"Log of the check: $(tilde "$RUN_LOG")"
+        [[ -n "${RUN_LOG:-}" ]] && summary+=$'\n'"Log: $(tilde "$RUN_LOG")"
         rm -f "$SUMMARY_FILE"; SUMMARY_FILE=""
-        RUN_LOG=""
 
         lines=()
         while IFS=$'\t' read -r m n line; do
@@ -118,18 +114,20 @@ run_menu() {
         if [[ "$check_only" != true ]]; then
             # the check is in the log now
             printf '\033[H\033[2J'
-            n=0
+            n=0 line=""
             if (( ${#lines[@]} )); then
                 while IFS=$'\t' read -r m f; do
                     [[ -n "$m" ]] || continue
                     [[ " ${runs[*]} " == *" $m "* ]] || runs+=("$m")
                     MODE_ITEMS["$m"]+="$f"$'\n'
+                    line+="${line:+, }$f"
                     (( ++n ))
                 done < <(printf '%s\n' "${lines[@]}" |
                     menu_fzf --with-nth=3.. --bind 'load:select-all' \
                         --header="Updates to download  (Tab: unmark, Enter: download, Esc: none)$summary" |
                     cut -f1,2)
             fi
+            (( n )) && run_log "chosen for download: $line"
             # nothing to download: the check's results stay on screen
             if (( n == 0 )); then
                 while IFS= read -r line; do
@@ -138,6 +136,7 @@ run_menu() {
                     printf '%s\n' "$line"
                 done <<<"${summary#$'\n'}"
                 if (( ${#lines[@]} )); then line="nothing downloaded"; else line="✓ nothing to update"; fi
+                run_log "$line"
                 paint line "$line"
                 printf '%s\n' "$line"
             fi

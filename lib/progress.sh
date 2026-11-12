@@ -63,8 +63,7 @@ block_draw() {
 
 block_redraw() { block_erase; block_draw; }
 
-# Copies a permanent line, plain, to RUN_LOG when the menu keeps one (its
-# check's output, cleared from the screen afterwards).
+# Copies a permanent line, plain, to the session log (RUN_LOG, start_log).
 run_log() {
     [[ -n "${RUN_LOG:-}" ]] && printf '%s\n' "$*" >> "$RUN_LOG"
     return 0
@@ -159,6 +158,7 @@ finish_progress() {
     PROGRESS_LABEL="Done"
     if declare -f rate_summary >/dev/null; then
         rate_summary
+        [[ -n "$STATUS" ]] && run_log "$STATUS"
     else
         STATUS=""
     fi
