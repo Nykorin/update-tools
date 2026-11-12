@@ -13,6 +13,7 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **update-tools, lib/menu.sh, lib/main.sh, lib/load.sh, README.md:** Without `-m`, on a terminal with `fzf`, `update-tools` opens a menu. Step 1 picks the kinds (those whose folder is missing or not set are named above the list, with the reason). Step 2, for each kind, either checks all its items (the first line, the default) or runs single marked items directly. After the check, which downloads and writes nothing, a list of the updates found, all marked: Enter downloads what's still marked, Esc nothing; with `-c` the run ends after the check. Esc in step 2 goes back to step 1. Each pass runs under its own heading (`▶ ISOs: checking for updates`, `▶ ISOs: updating`) with the usual summary. `run_mode` takes the menu's choice of items (`MODE_ITEMS`), and a check writes each update it finds to the menu's list (`AVAILABLE_FILE`) *(Claude, directed by user)*
 
 ### Changed
+- **README.md:** The make-update-cfg section says that dirlist, dateprobe and jsonfeed cfgs are written by hand, and what happens when no pattern tells the chosen file apart *(Claude, directed by user)*
 - **lib/menu.sh:** The menu's check goes to the session log instead of `check.log`, and the download list names that log *(Claude, directed by user)*
 - **all modes, lib/main.sh, windows/lib/main.ps1:** After a GitHub rate limit, the item that hit it counts as not checked, with the ones after it, instead of under "skipped or failed"; the summary line says why: `⚠ 6 not checked (GitHub rate limit)` (was `⚠ 1 skipped or failed: aa_gh` and `⚠ 5 not checked`) *(Claude, directed by user)*
 - **README.md, windows/README.md:** The README's introduction describes the one command with its menu and `-m` (it still described one command per kind); the Windows README says the menu isn't ported, so `-m` is always needed there *(Claude, directed by user)*
@@ -21,6 +22,9 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 
 ### Removed
 - **update-appimages, update-apworlds, update-isos:** The three per-kind commands (2026-11-06); `update-tools -m app`, `-m apw` and `-m iso` replace them *(Claude, directed by user)*
+
+### Fixed
+- **make-update-cfg, windows/make-update-cfg.ps1:** When neither the version glob nor the version regex matched only the chosen asset in its release (`tool-1.0-linux.AppImage` next to `tool-1.0b-linux.AppImage`), the ambiguous glob was written anyway, and its check before writing passed whenever today's first match happened to be the chosen file; a later release could then resolve to the other one, since the updater takes the first match. It now writes nothing, lists the other matching assets, and says to write the cfg by hand with a `repo_regex` *(Claude, directed by user)*
 
 ## [2026-11-08]
 

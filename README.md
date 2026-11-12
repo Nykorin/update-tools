@@ -97,6 +97,8 @@ make-update-cfg -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x
 - **GitHub or GitLab projects:** it takes the latest stable release with something installable (`-l`, the default), or with `-p` the newest release, pre-releases included; the cfg then keeps to that choice (`"allow_prereleases": "false"` or `"true"`). It ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
 - **Any other link:** it becomes a fixed download.
 - **ISOs:** it also looks for a checksum file next to the ISO. Set `"folder"` to the ISO's folder on the drive afterwards.
+- **dirlist, dateprobe and jsonfeed** cfgs aren't made from a link: write them by hand, after the examples and the managers' table below.
+- If no pattern can tell the chosen file apart from another file in the same release (say `tool-1.0-linux.AppImage` and `tool-1.0b-linux.AppImage`), it writes nothing and lists the other matches; write that cfg by hand with a `"repo_regex"`.
 
 It never overwrites an existing cfg.
 

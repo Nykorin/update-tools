@@ -138,9 +138,17 @@ function Set-AssetPattern($it, $Releases) {
     Debug-Line "$($it.repo_filename) also matches other assets; using a regex"
     $prefix = $ver -replace '[0-9].*$', ''
     $re = (Get-RegexEscaped $script:Asset).Replace((Get-RegexEscaped $ver), (Get-RegexEscaped $prefix) + '[0-9][0-9A-Za-z.+~]*')
-    if (@($names | Where-Object { [regex]::IsMatch($_, "^($re)`$") }).Count -eq 1) {
+    $matching = @($names | Where-Object { [regex]::IsMatch($_, "^($re)`$") })
+    if ($matching.Count -eq 1) {
         $it.repo_filename = ''; $it.repo_regex = $re
+        return
     }
+    # neither picks only this asset, so a later release could resolve to one
+    # of the others (the updater takes the first match): write nothing
+    Write-Err "make-update-cfg.ps1: in release $($script:Tag), no pattern matches only $($script:Asset); it also matches:"
+    $matching | Where-Object { $_ -cne $script:Asset } | ForEach-Object { Write-Err "  $_" }
+    Write-Err 'Write the cfg by hand, with a "repo_regex" that matches only the file you want.'
+    exit 1
 }
 
 # A string as a regex that matches it literally; the same characters the bash
