@@ -57,8 +57,8 @@ update-tools -m apw          # update the worlds
 update-tools -m iso -c       # only check the ISOs, download nothing
 update-tools -m iso -r /run/media/me/Ventoy
 update-tools -m all          # all three in turn, no menu
-update-tools -u foo          # uninstall the AppImage whose cfg is foo.json
-update-tools -u              # pick AppImages to uninstall from a list (fzf)
+update-tools remove foo      # remove the AppImage whose cfg is foo.json
+update-tools remove          # pick AppImages to remove from a list (fzf)
 ```
 
 Without `-m`, on a terminal, `update-tools` opens a menu ([fzf](https://github.com/junegunn/fzf)):
@@ -75,13 +75,12 @@ Without a terminal (cron, a pipe) or without fzf, it runs all three, as `-m all`
 | `-c`, `--check` | look up and compare, then report what would be updated; downloads and writes nothing |
 | `-f`, `--force` | check items checked within `skip_hours` too; for AppImages, also rebuild each desktop entry and icon |
 | `-r`, `--root DIR` | use DIR instead of the folder set in the settings (only with `-m app`, `apw` or `iso`) |
-| `-u`, `--uninstall [NAME]` | remove AppImage NAME (see below), or without NAME pick from the installed ones; repeat it for several; implies `-m app` |
 | `-d`, `--debug` | explain each decision and time each item (or `DEBUG=1`) |
-| `-h`, `--help [TOPIC]` | show the help: an overview, or one topic: `modes`, `menu`, `settings`, `uninstall`, `make` or `all` |
+| `-h`, `--help [TOPIC]` | show the help: an overview, or one topic: `modes`, `menu`, `settings`, `remove`, `make` or `all` |
 
 Each item is checked at most once per `skip_hours` (24 by default) unless `-f` is given or `skip_checked=off`. On a terminal the output is a live two-line status block with an overall progress bar; redirected output is plain text without escape codes. Each run ends with a summary per kind: how many items were updated, installed, up to date or checked recently, and by name the ones with an update available (`-c`) and the ones skipped or failed, so a problem in a long run can't hide in the scrollback. When GitHub requests were made, the last line shows how many of the hourly request budget are left.
 
-`-u NAME` uninstalls an AppImage by its cfg name: it removes the AppImage, its desktop entry, its icon in `.update-tools/icons/` (unless another desktop entry names the same icon), `db/NAME.desktop` if there is one, and the cfg itself, last, so the next run doesn't install it again. `-u` without a name (followed by nothing or by another option) opens a list of the installed AppImages in fzf, with each one's file and size: Tab marks several, Enter takes them, Esc quits; it needs a terminal. On a terminal it lists every chosen app's files and asks once; with `-c` it only lists them.
+`update-tools remove NAME…` removes AppImages by their cfg names: for each, it removes the AppImage, its desktop entry, its icon in `.update-tools/icons/` (unless another desktop entry names the same icon), `db/NAME.desktop` if there is one, and the cfg itself, last, so the next run doesn't install it again. Without a name, `remove` opens a list of the installed AppImages in fzf, with each one's file and size: Tab marks several, Enter takes them, Esc quits; it needs a terminal. On a terminal it lists every chosen app's files and asks once; with `-c` it only lists them. `-r DIR` and `-d` work with it too, before or after `remove`.
 
 Whenever a run writes or removes a desktop entry, it then refreshes the desktop database (`update-desktop-database ~/.local/share/applications`, from desktop-file-utils), so "Open with" knows the app's file types. Without that command the run warns and goes on.
 
@@ -97,7 +96,7 @@ update-tools -m apw make -p https://github.com/OrcThrowman/7-Days-to-Die-AP
 update-tools make -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
 ```
 
-`-m` is `app`, `apw` or `iso`, before or after `make` (so are `-r` and `-d`); the link comes next or after `-u` (here `-u` is the link, not uninstall), then an optional name for the cfg. `update-tools make -h` shows its options. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next `update-tools` run for that kind installs the item.
+`-m` is `app`, `apw` or `iso`, before or after `make` (so are `-r` and `-d`); the link comes next or after `-u` (`-u` is make's own option), then an optional name for the cfg. `update-tools make -h` shows its options. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next `update-tools` run for that kind installs the item.
 
 - **GitHub or GitLab projects:** it takes the latest stable release with something installable (`-l`, the default), or with `-p` the newest release, pre-releases included; the cfg then keeps to that choice (`"allow_prereleases": "false"` or `"true"`). It ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
 - **Any other link:** it becomes a fixed download.

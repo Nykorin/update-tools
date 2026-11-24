@@ -273,7 +273,7 @@ item_extras() {
     generate_desktop_entry "$name" "$target"
 }
 
-# A bare -u: the installed AppImages (cfgs whose installed_file is still
+# remove without a NAME: the installed AppImages (cfgs whose installed_file is still
 # there) in fzf, several can be marked; prints the chosen cfg names. Esc
 # chooses none.
 pick_installed() {
@@ -296,20 +296,20 @@ pick_installed() {
         cut -f1
 }
 
-# -u: removes each app named (by its cfg name), or picked (pick_installed): the
-# AppImage, its desktop entry, its icon (icons/NAME.* and icons/ICON.*, unless
-# another entry names ICON too), then db/NAME.desktop and the cfg, last, so an
-# interrupted uninstall can be run again. On a terminal it lists every app's
+# update-tools remove: removes each app named (by its cfg name), or picked
+# (pick_installed): the AppImage, its desktop entry, its icon (icons/NAME.* and
+# icons/ICON.*, unless another entry names ICON too), then db/NAME.desktop and
+# the cfg, last, so an interrupted removal can be run again. On a terminal it lists every app's
 # files and asks once; -c only lists them. Returns 1 if any app wasn't found
 # or wasn't removed in full.
-uninstall_items() {
+remove_items() {
     local name cfg_file entry icon f answer failed=0 shown
     local -a files names=()
     local -A plan=()
 
     if (( $# == 0 )); then
         if ! menu_available; then
-            say "✗ -u without a name needs a terminal and fzf; name the AppImage: -u NAME"
+            say "✗ remove without a name needs a terminal and fzf; name the AppImage: update-tools remove NAME"
             return 1
         fi
         mapfile -t names < <(pick_installed)

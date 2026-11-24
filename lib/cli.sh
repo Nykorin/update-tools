@@ -6,14 +6,14 @@ ROOT_ARG=""
 # What -m asked for: app, apw or iso, all (all three, no menu), or empty
 # (no -m: the menu on a terminal, all three otherwise).
 RUN_TYPE=""
-# -u: the AppImages to uninstall (cfg names), or UNINSTALL_PICK=1 for a bare
-# -u (pick them with fzf); either implies -m app.
-UNINSTALL_NAMES=() UNINSTALL_PICK=0
+# update-tools remove: REMOVE=1, with the AppImages to remove (cfg names) in
+# REMOVE_NAMES; none means pick them with fzf. Implies -m app.
+REMOVE=0 REMOVE_NAMES=()
 
 # The help: -h prints the overview (usage), -h TOPIC one part of it
 # (help_topic). A bad option prints the overview to stderr. Folders and the
 # skip are the ones the settings file sets.
-HELP_TOPICS="modes menu settings uninstall make all"
+HELP_TOPICS="modes menu settings remove make all"
 
 # Sets app, apw, iso and skip (help_modes, help_settings) from the settings.
 help_settings_vars() {
@@ -31,7 +31,7 @@ help_settings_vars() {
 usage() {
     cat <<EOF
 Usage: ${0##*/} [-m MODE] [OPTIONS]
-       ${0##*/} -u [NAME]
+       ${0##*/} remove [NAME...]
        ${0##*/} make -m MODE [OPTIONS] LINK [NAME]
 Check and update AppImages, Archipelago worlds and ISOs. Without -m, on a
 terminal, a menu (fzf) picks what to update.
@@ -43,8 +43,6 @@ Options:
                     for AppImages, also rebuild each desktop entry and its icon
   -r, --root DIR    use DIR instead of the mode's folder (only with -m app,
                     apw or iso)
-  -u, --uninstall [NAME]
-                    remove an AppImage, or pick them from a list (-h uninstall)
   -d, --debug       explain each decision and time each item (or DEBUG=1)
   -h, --help [TOPIC]
                     show this help, or one topic
@@ -53,7 +51,7 @@ Topics (-h TOPIC):
   modes             what each mode updates, and from where
   menu              the menu, without -m
   settings          the settings file, and what it sets now
-  uninstall         what -u removes
+  remove            removing AppImages (${0##*/} remove -h)
   make              writing a new item's cfg (${0##*/} make -h)
   all               every topic
 EOF
@@ -111,16 +109,21 @@ ignores both for one run.
 EOF
 }
 
-help_uninstall() {
+help_remove() {
     cat <<EOF
-Uninstall:
-  -u NAME           remove AppImage NAME (its cfg's name); repeat -u for
-                    several
-  -u                pick from the installed AppImages (fzf; Tab marks
-                    several), on a terminal
+Usage: ${0##*/} remove [OPTIONS] [NAME...]
+Remove AppImages: each NAME is a cfg's name (db/NAME.json). Without NAME, pick
+from the installed AppImages (fzf; Tab marks several), on a terminal.
+
 It removes the AppImage, its desktop entry, its icon (unless another entry uses
 it), db/NAME.desktop and db/NAME.json. On a terminal it lists the files and
-asks first; -c only lists them. -u implies -m app; -r DIR works with it.
+asks first.
+
+Options:
+  -c, --check       only list the files, remove nothing
+  -r, --root DIR    the AppImages folder (default: app_dir)
+  -d, --debug       explain each decision (or DEBUG=1)
+  -h, --help        show this help
 EOF
 }
 
@@ -131,11 +134,11 @@ help_topic() {
         modes)     help_modes ;;
         menu)      help_menu ;;
         settings)  help_settings ;;
-        uninstall) help_uninstall ;;
+        remove)    help_remove ;;
         make)      make_usage ;;
         all)
             usage
-            for t in modes menu settings uninstall make; do
+            for t in modes menu settings remove make; do
                 echo; help_topic "$t"
             done ;;
         *)
@@ -154,16 +157,17 @@ paint_text() {
     sed -E \
         -e "s/^(Usage: |       )($cmd)\b/\1$C_BOLD$C_CYAN\2$C_R/" \
         -e "s/(^|[ (,])($cmd)([ ,:)]|$)/\1$C_CYAN\2$C_R\4/g" \
-        -e "s/^(Usage|Settings|Options|Topics|Modes|Menu|Uninstall):?/$C_BOLD$C_YELLOW&$C_R/" \
+        -e "s/^(Usage|Settings|Options|Topics|Modes|Menu):?/$C_BOLD$C_YELLOW&$C_R/" \
         -e "s/^(LINK|NAME):/$C_YELLOW\1$C_R:/" \
         -e "s/(^|[ (/,[|])(--?[a-z][a-z-]*)/\1$C_GREEN\2$C_R/g" \
         -e "s/\b(DIR|TYPE|MODE|LINK|NAME|OPTIONS|TOPIC)\b/$C_YELLOW\1$C_R/g"
 }
 
 
-# Sets RUN_TYPE (-m), force, check_only, DEBUG, UNINSTALL_NAMES and
-# UNINSTALL_PICK (-u), and ROOT_ARG (-r, only with -m app, apw or iso); -h
-# prints usage, and a bad option prints it to stderr.
+# Sets RUN_TYPE (-m), force, check_only, DEBUG, REMOVE_NAMES (the words after
+# remove, with REMOVE set by update_tools) and ROOT_ARG (-r, only with -m app,
+# apw or iso); -h prints usage (remove's help after remove), and a bad option
+# prints it to stderr.
 # shellcheck disable=SC2034  # force and check_only are read by the modes
 parse_flags() {
     local m
@@ -193,42 +197,39 @@ parse_flags() {
                 if [[ -z "$ROOT_ARG" ]]; then
                     echo "${0##*/}: ${1%%=*} needs a folder" >&2; usage >&2; exit 2
                 fi ;;
-            -u|--uninstall|--uninstall=*)
-                if [[ "$1" == --uninstall=* ]]; then
-                    m="${1#--uninstall=}"
-                elif [[ -n "${2:-}" && "$2" != -* ]]; then
-                    m="$2"; shift
-                else
-                    # no name: the picker
-                    UNINSTALL_PICK=1; shift; continue
-                fi
-                # a cfg name, never a path
-                if [[ -z "$m" || "$m" == */* || "$m" == . || "$m" == .. ]]; then
-                    echo "${0##*/}: -u needs an AppImage's cfg name (db/NAME.json), not '$m'" >&2
-                    exit 2
-                fi
-                UNINSTALL_NAMES+=("${m%.json}") ;;
             -d|--debug) DEBUG=1 ;;
             -h|--help|--help=*)
                 if [[ "$1" == --help=* ]]; then
                     m="${1#--help=}"
                 elif [[ -n "${2:-}" && "$2" != -* ]]; then
                     m="$2"
+                elif (( REMOVE )); then
+                    help_remove | paint_text; exit 0
                 else
                     usage | paint_text; exit 0
                 fi
                 # a wrong topic's error first, outside the pipe (its exit 2)
                 [[ " $HELP_TOPICS " == *" $m "* ]] || help_topic "$m"
                 help_topic "$m" | paint_text; exit 0 ;;
-            *)          echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+            -*|"")      echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
+            *)
+                # remove's NAMEs: cfg names, never paths
+                if (( ! REMOVE )); then
+                    echo "${0##*/}: unknown argument '$1'" >&2; usage >&2; exit 2
+                fi
+                if [[ "$1" == */* || "$1" == . || "$1" == .. ]]; then
+                    echo "${0##*/} remove: NAME is an AppImage's cfg name (db/NAME.json), not '$1'" >&2
+                    exit 2
+                fi
+                REMOVE_NAMES+=("${1%.json}") ;;
         esac
         shift
     done
-    if (( ${#UNINSTALL_NAMES[@]} || UNINSTALL_PICK )); then
+    if (( REMOVE )); then
         case "$RUN_TYPE" in
             "")  RUN_TYPE=app ;;
             app) ;;
-            *)   echo "${0##*/}: -u uninstalls AppImages only (-m app)" >&2; exit 2 ;;
+            *)   echo "${0##*/} remove: only AppImages can be removed (-m app)" >&2; exit 2 ;;
         esac
     fi
     case "$RUN_TYPE" in

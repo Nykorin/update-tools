@@ -363,9 +363,9 @@ run_mode() {
 
     start_run
 
-    # -u (AppImages only, parse_flags makes sure): no updates in this run
-    if (( ${#UNINSTALL_NAMES[@]} || UNINSTALL_PICK )); then
-        uninstall_items "${UNINSTALL_NAMES[@]}"; rc=$?
+    # remove (AppImages only, parse_flags makes sure): no updates in this run
+    if (( REMOVE )); then
+        remove_items "${REMOVE_NAMES[@]}"; rc=$?
         mode_finish
         return "$rc"
     fi
@@ -461,21 +461,27 @@ start_log() {
 
 # The command, update-tools: -m picks the mode (all for all three); without it,
 # the menu on a terminal with fzf (menu.sh), else all three. Exits 1 if a mode
-# couldn't run. update-tools make … writes a cfg instead (make.sh).
+# couldn't run. update-tools make … writes a cfg instead (make.sh), and
+# update-tools remove … removes AppImages (remove_items in appimages.sh).
 # shellcheck disable=SC2034  # force, check_only, NOW and checked_at are read by the modes
 update_tools() {
     local i arg
     force=false check_only=false
-    # make (update-tools make …): writing a cfg, not updating. It may follow
-    # -m, -r or -d (update-tools -m apw make LINK), which make takes too.
+    # make (update-tools make …) writes a cfg and remove (update-tools remove
+    # …) removes AppImages, instead of updating. Either may follow options
+    # (update-tools -m apw make LINK), which it takes too.
     for (( i = 1; i <= $#; i++ )); do
         arg="${!i}"
         case "$arg" in
             -m|--mode|-r|--root) (( i++ )) ;;
-            --mode=*|--root=*|-d|--debug) ;;
+            --mode=*|--root=*|-d|--debug|-c|--check|-f|--force) ;;
             make)
                 make_cfg "${@:1:i-1}" "${@:i+1}"
                 exit ;;
+            remove)
+                REMOVE=1
+                set -- "${@:1:i-1}" "${@:i+1}"
+                break ;;
             *) break ;;
         esac
     done
