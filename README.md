@@ -77,7 +77,7 @@ Without a terminal (cron, a pipe) or without fzf, it runs all three, as `-m all`
 | `-r`, `--root DIR` | use DIR instead of the folder set in the settings (only with `-m app`, `apw` or `iso`) |
 | `-u`, `--uninstall [NAME]` | remove AppImage NAME (see below), or without NAME pick from the installed ones; repeat it for several; implies `-m app` |
 | `-d`, `--debug` | explain each decision and time each item (or `DEBUG=1`) |
-| `-h`, `--help` | show the help |
+| `-h`, `--help [TOPIC]` | show the help: an overview, or one topic: `modes`, `menu`, `settings`, `uninstall`, `make` or `all` |
 
 Each item is checked at most once per `skip_hours` (24 by default) unless `-f` is given or `skip_checked=off`. On a terminal the output is a live two-line status block with an overall progress bar; redirected output is plain text without escape codes. Each run ends with a summary per kind: how many items were updated, installed, up to date or checked recently, and by name the ones with an update available (`-c`) and the ones skipped or failed, so a problem in a long run can't hide in the scrollback. When GitHub requests were made, the last line shows how many of the hourly request budget are left.
 

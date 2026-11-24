@@ -10,10 +10,13 @@ RUN_TYPE=""
 # -u (pick them with fzf); either implies -m app.
 UNINSTALL_NAMES=() UNINSTALL_PICK=0
 
-# The help text: -h, and after a bad option (to stderr). The folders and the
+# The help: -h prints the overview (usage), -h TOPIC one part of it
+# (help_topic). A bad option prints the overview to stderr. Folders and the
 # skip are the ones the settings file sets.
-usage() {
-    local app apw iso skip
+HELP_TOPICS="modes menu settings uninstall make all"
+
+# Sets app, apw, iso and skip (help_modes, help_settings) from the settings.
+help_settings_vars() {
     load_settings
     app=$(tilde "${app_dir:-$HOME/AppImages}"); [[ -n "${app_dir:-}" ]] || app+=" (the default)"
     apw=$(tilde "${apw_dir:-(not set)}")
@@ -23,54 +26,122 @@ usage() {
     else
         skip="off: every item is checked on every run"
     fi
+}
+
+usage() {
     cat <<EOF
 Usage: ${0##*/} [-m MODE] [OPTIONS]
+       ${0##*/} -u [NAME]
        ${0##*/} make -m MODE [OPTIONS] LINK [NAME]
-Check and update AppImages, Archipelago worlds and ISOs. Each item has a cfg
-(NAME.json) in its folder's .update-tools/db/; one whose item isn't there yet
-is installed.
-
-Without -m, on a terminal, a menu (fzf) picks what to update: the kinds, then
-for each either all its items (checked first, then the updates found are
-offered for download) or single items. Without a terminal, or without fzf, it
-runs all three.
-
-Modes:
-  app, appimages    the AppImages (desktop entries go to
-                    ~/.local/share/applications, from db/NAME.desktop if
-                    there is one)
-  apw, apworlds     the Archipelago custom worlds
-  iso, isos         the ISOs on a Ventoy drive; each cfg's "folder" names the
-                    ISO's folder, and every download is checksum-verified
-                    before it replaces anything
-  all               all three in turn, skipping any that can't run
-
-make writes a new item's cfg from a link (a GitHub or GitLab project or release
-asset, or a fixed download); the next run installs the item. -m picks its kind,
-before or after make. ${0##*/} make -h shows its options.
-
-Settings ($(tilde "$SETTINGS_FILE")):
-  app_dir=          $app
-  apw_dir=          $apw
-  iso_dir=          $iso
-  skip_checked=     $skip
+Check and update AppImages, Archipelago worlds and ISOs. Without -m, on a
+terminal, a menu (fzf) picks what to update.
 
 Options:
-  -m, --mode MODE   what to update (see Modes), without the menu
+  -m, --mode MODE   app, apw, iso or all, without the menu (-h modes)
   -c, --check       only look for updates: download and change nothing
   -f, --force       check every item, even ones checked within skip_hours;
                     for AppImages, also rebuild each desktop entry and its icon
   -r, --root DIR    use DIR instead of the mode's folder (only with -m app,
                     apw or iso)
   -u, --uninstall [NAME]
-                    remove AppImage NAME (its cfg's name): the AppImage, its
-                    desktop entry, its icon, and db/NAME.json and
-                    db/NAME.desktop; asks first on a terminal, -c only lists
-                    the files. Without NAME, pick from the installed
-                    AppImages (fzf). Repeat it for several; implies -m app
+                    remove an AppImage, or pick them from a list (-h uninstall)
   -d, --debug       explain each decision and time each item (or DEBUG=1)
-  -h, --help        show this help
+  -h, --help [TOPIC]
+                    show this help, or one topic
+
+Topics (-h TOPIC):
+  modes             what each mode updates, and from where
+  menu              the menu, without -m
+  settings          the settings file, and what it sets now
+  uninstall         what -u removes
+  make              writing a new item's cfg (${0##*/} make -h)
+  all               every topic
 EOF
+}
+
+help_modes() {
+    local app apw iso skip
+    help_settings_vars
+    [[ -n "${apw_dir:-}" ]] || apw="no folder set (-h settings)"
+    [[ -n "${iso_dir:-}" ]] || iso="no folder set (-h settings)"
+    cat <<EOF
+Modes:
+  app, appimages    the AppImages: $app
+                    (desktop entries go to ~/.local/share/applications, from
+                    db/NAME.desktop if there is one)
+  apw, apworlds     the Archipelago custom worlds: $apw
+  iso, isos         the ISOs on a Ventoy drive: $iso
+                    (each cfg's "folder" names the ISO's folder, and every
+                    download is checksum-verified before it replaces anything)
+  all               all three in turn, skipping any that can't run
+
+Each item has a cfg (NAME.json) in its folder's .update-tools/db/; one whose
+item isn't there yet is installed. Without -m, and without a terminal or fzf,
+all three run.
+EOF
+}
+
+help_menu() {
+    cat <<EOF
+Menu:
+Without -m, on a terminal with fzf, a menu picks what to update:
+  1. the kinds (Tab marks several, Enter takes them, Esc quits)
+  2. for each kind, "check all" (the first line), or single marked items,
+     which are updated directly; Esc goes back
+  3. after the check, which downloads nothing, the updates found are listed,
+     all marked: Enter downloads what's still marked, Esc nothing
+With -c the run ends after the check. The check's output is in the session
+log (~/.cache/update-tools/), whose path the list shows.
+EOF
+}
+
+help_settings() {
+    local app apw iso skip
+    help_settings_vars
+    cat <<EOF
+Settings ($(tilde "$SETTINGS_FILE")):
+  app_dir=          $app
+  apw_dir=          $apw
+  iso_dir=          $iso
+  skip_checked=     $skip
+
+One key=value per line. skip_checked=off checks every item on every run;
+skip_hours (default 24; 168 is weekly) sets how long a check counts. -f
+ignores both for one run.
+EOF
+}
+
+help_uninstall() {
+    cat <<EOF
+Uninstall:
+  -u NAME           remove AppImage NAME (its cfg's name); repeat -u for
+                    several
+  -u                pick from the installed AppImages (fzf; Tab marks
+                    several), on a terminal
+It removes the AppImage, its desktop entry, its icon (unless another entry uses
+it), db/NAME.desktop and db/NAME.json. On a terminal it lists the files and
+asks first; -c only lists them. -u implies -m app; -r DIR works with it.
+EOF
+}
+
+# -h TOPIC: one part of the help; every part for "all".
+help_topic() {
+    local t
+    case "$1" in
+        modes)     help_modes ;;
+        menu)      help_menu ;;
+        settings)  help_settings ;;
+        uninstall) help_uninstall ;;
+        make)      make_usage ;;
+        all)
+            usage
+            for t in modes menu settings uninstall make; do
+                echo; help_topic "$t"
+            done ;;
+        *)
+            echo "${0##*/}: no help topic '$1' (${HELP_TOPICS// /, })" >&2
+            exit 2 ;;
+    esac
 }
 
 # Colours the help text on its way to a terminal, as system-update's -h does:
@@ -83,10 +154,10 @@ paint_text() {
     sed -E \
         -e "s/^(Usage: |       )($cmd)\b/\1$C_BOLD$C_CYAN\2$C_R/" \
         -e "s/(^|[ (,])($cmd)([ ,:)]|$)/\1$C_CYAN\2$C_R\4/g" \
-        -e "s/^(Usage|Settings|Options):?/$C_BOLD$C_YELLOW&$C_R/" \
+        -e "s/^(Usage|Settings|Options|Topics|Modes|Menu|Uninstall):?/$C_BOLD$C_YELLOW&$C_R/" \
         -e "s/^(LINK|NAME):/$C_YELLOW\1$C_R:/" \
         -e "s/(^|[ (/,[|])(--?[a-z][a-z-]*)/\1$C_GREEN\2$C_R/g" \
-        -e "s/\b(DIR|TYPE|MODE|LINK|NAME|OPTIONS)\b/$C_YELLOW\1$C_R/g"
+        -e "s/\b(DIR|TYPE|MODE|LINK|NAME|OPTIONS|TOPIC)\b/$C_YELLOW\1$C_R/g"
 }
 
 
@@ -138,7 +209,17 @@ parse_flags() {
                 fi
                 UNINSTALL_NAMES+=("${m%.json}") ;;
             -d|--debug) DEBUG=1 ;;
-            -h|--help)  usage | paint_text; exit 0 ;;
+            -h|--help|--help=*)
+                if [[ "$1" == --help=* ]]; then
+                    m="${1#--help=}"
+                elif [[ -n "${2:-}" && "$2" != -* ]]; then
+                    m="$2"
+                else
+                    usage | paint_text; exit 0
+                fi
+                # a wrong topic's error first, outside the pipe (its exit 2)
+                [[ " $HELP_TOPICS " == *" $m "* ]] || help_topic "$m"
+                help_topic "$m" | paint_text; exit 0 ;;
             *)          echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
         esac
         shift

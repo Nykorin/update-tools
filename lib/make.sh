@@ -232,7 +232,7 @@ find_checksum() {
 }
 
 make_cfg() {
-    local -a args=() pairs=()
+    local -a args=() pairs=() given_args=("$@")
     local link="" name name_arg default_name cfg owner project tag asset wanted="" other
     local ROOT_ARG="" type_arg="" prerelease="" given
     while (( $# )); do
@@ -281,6 +281,9 @@ make_cfg() {
     esac
     prerelease="${prerelease:-false}"
     [[ "$link" == *://* ]] || link="https://$link"
+    # only now, as for update-tools: -h and usage errors leave no log
+    printf -v NOW '%(%s)T' -1
+    start_log make "${given_args[@]}"
 
     ITEM_TYPE="$MODE"
     item_settings
@@ -294,7 +297,6 @@ make_cfg() {
     GITHUB_HEADERS=$(mktemp)
     trap 'rm -f "$GITHUB_HEADERS"' EXIT
     load_github_token
-    printf -v NOW '%(%s)T' -1
     printf -v checked_at '%(%FT%H:%M)T' "$NOW"
 
     unset "${CFG_KEYS[@]}"

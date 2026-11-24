@@ -474,8 +474,6 @@ update_tools() {
             -m|--mode|-r|--root) (( i++ )) ;;
             --mode=*|--root=*|-d|--debug) ;;
             make)
-                printf -v NOW '%(%s)T' -1
-                start_log "$@"
                 make_cfg "${@:1:i-1}" "${@:i+1}"
                 exit ;;
             *) break ;;

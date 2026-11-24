@@ -14,12 +14,16 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 - **lib/appimages.sh, lib/main.sh, lib/run.sh, README.md:** After a run that wrote or removed a desktop entry, `update-desktop-database ~/.local/share/applications` refreshes the desktop database once, through a new `mode_finish` hook (also called from the EXIT trap after a Ctrl+C). Without the command (desktop-file-utils) the run warns and goes on *(Claude, directed by user)*
 
 ### Changed
+- **lib/cli.sh, README.md:** `-h` prints a short overview (26 lines, was 46): the usage lines, every option on a line or two, and a list of topics. `-h TOPIC` (or `--help=TOPIC`) prints one part: `modes` (each mode and its folder), `menu`, `settings` (the settings file and its values), `uninstall`, `make` (as `update-tools make -h`), or `all`. A wrong topic names the valid ones (exit 2). A mistyped option prints the overview *(Claude, directed by user)*
 - **update-tools, lib/make.sh, lib/main.sh, lib/load.sh, lib/cli.sh, README.md:** `make-update-cfg` is now `update-tools make`: the same options, checks, messages and cfgs (compared on GitHub, GitLab, static and ISO links, and an existing cfg). `-m`, `-r` and `-d` may also come before `make` (`update-tools -m apw make LINK`). Inside `make`, `-u` is still the link. `update-tools -h` names it, and `update-tools make -h` shows its options. It writes a session log like any other run *(Claude, directed by user)*
 - **.github/ISSUE_TEMPLATE/bug_report.yml, .github/ISSUE_TEMPLATE/feature_request.yml:** The part is called "Writing a cfg (update-tools make)" *(Claude, directed by user)*
 - **lib/appimages.sh:** `-u` with several AppImages lists all their files and asks once (`Uninstall 2 AppImages (bar, baz)? [y/N]`) instead of once per app *(Claude, directed by user)*
 
 ### Removed
 - **make-update-cfg:** The separate command; `update-tools make` replaces it. The Windows port keeps `make-update-cfg.ps1` *(Claude, directed by user)*
+
+### Fixed
+- **lib/make.sh, lib/main.sh:** `update-tools make -h` and a `make` usage error wrote a session log; like `update-tools -h`, they leave none now *(Claude)*
 
 ## [2026-11-11]
 
