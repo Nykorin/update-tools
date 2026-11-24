@@ -1,34 +1,13 @@
-﻿<#
-make-update-cfg.ps1: writes a new world's or ISO's cfg from a link, for
-update-tools.ps1 to install on its next run. The PowerShell port of the bash
-make-update-cfg. Run without arguments for the help.
-#>
-# Unnamed arguments fill the parameters in this order, so LINK and NAME come
-# first; no [Parameter()] attributes, which would make it an advanced script
-# and claim -Debug for PowerShell's own use
-param(
-    [string]$Link,
-    [string]$Name,
-    [Alias('m')][string]$Mode,
-    [Alias('u')][string]$Url,
-    [Alias('l')][switch]$Latest,
-    [Alias('p')][switch]$Prerelease,
-    [Alias('r')][string]$Root,
-    [Alias('d')][switch]$Debug,
-    [Alias('h')][switch]$Help
-)
-Set-StrictMode -Version 1
-$ErrorActionPreference = 'Continue'
-[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+﻿# make.ps1: update-tools.ps1 make, which writes a new world's or ISO's cfg from
+# a link, for update-tools.ps1 to install on its next run (the port of the bash
+# update-tools make; it was make-update-cfg.ps1 until 2026-11-24). Loaded by
+# update-tools.ps1.
 
-foreach ($lib in 'output', 'cfg', 'net', 'managers', 'files', 'isos', 'main') {
-    . (Join-Path (Join-Path $PSScriptRoot 'lib') "$lib.ps1")
-}
-
-function Show-Usage([switch]$ToError) {
+# The help of update-tools.ps1 make (make -h, -h make, or make alone).
+function Show-MakeUsage([switch]$ToError) {
     $text = @"
-Usage: make-update-cfg.ps1 -m TYPE [OPTIONS] LINK [NAME]
-       make-update-cfg.ps1 -m TYPE -u LINK [OPTIONS] [NAME]
+Usage: update-tools.ps1 make -m TYPE [OPTIONS] LINK [NAME]
+       update-tools.ps1 make -m TYPE -u LINK [OPTIONS] [NAME]
 Write a cfg for a new Archipelago world or ISO, read from LINK. The next
 update-tools.ps1 run installs it.
 
@@ -48,8 +27,8 @@ Options:
     if ($ToError) { Write-Err $text } else { Say $text }
 }
 
-function Stop-WithError([string]$Text) {
-    Write-Err "make-update-cfg.ps1: $Text"
+function Stop-MakeError([string]$Text) {
+    Write-Err "update-tools.ps1 make: $Text"
     exit 1
 }
 
@@ -95,8 +74,8 @@ function Select-Asset($Releases, [string]$Wanted) {
         if ($found) { break }
     }
     if (-not $found) {
-        if ($script:Prerelease) { Stop-WithError "no release has a .$($script:Ext) asset (or an archive) to install" }
-        Stop-WithError "no stable release has a .$($script:Ext) asset (or an archive) to install; -p takes pre-releases too"
+        if ($script:Prerelease) { Stop-MakeError "no release has a .$($script:Ext) asset (or an archive) to install" }
+        Stop-MakeError "no stable release has a .$($script:Ext) asset (or an archive) to install; -p takes pre-releases too"
     }
     $script:Tag = $found.Tag
     $names = $found.Names
@@ -107,12 +86,12 @@ function Select-Asset($Releases, [string]$Wanted) {
     # Linux, Mac and ARM; the bash version drops Windows builds instead)
     $keep = @($names | Where-Object { $_.ToLower() -notmatch '(aarch64|arm64|armhf|armv7|(^|[-_.])(linux|mac(os)?|osx|darwin)([-_.]|$))' })
     if (-not $keep.Count) {
-        Write-Err "make-update-cfg.ps1: release $($script:Tag) has only builds for other systems:"
+        Write-Err "update-tools.ps1 make: release $($script:Tag) has only builds for other systems:"
         $names | ForEach-Object { Write-Err "  $_" }
         exit 1
     }
     if ($keep.Count -gt 1) {
-        Write-Err "make-update-cfg.ps1: release $($script:Tag) has several assets; pass the link of the one you want:"
+        Write-Err "update-tools.ps1 make: release $($script:Tag) has several assets; pass the link of the one you want:"
         $keep | ForEach-Object { Write-Err "  $_" }
         exit 1
     }
@@ -145,7 +124,7 @@ function Set-AssetPattern($it, $Releases) {
     }
     # neither picks only this asset, so a later release could resolve to one
     # of the others (the updater takes the first match): write nothing
-    Write-Err "make-update-cfg.ps1: in release $($script:Tag), no pattern matches only $($script:Asset); it also matches:"
+    Write-Err "update-tools.ps1 make: in release $($script:Tag), no pattern matches only $($script:Asset); it also matches:"
     $matching | Where-Object { $_ -cne $script:Asset } | ForEach-Object { Write-Err "  $_" }
     Write-Err 'Write the cfg by hand, with a "repo_regex" that matches only the file you want.'
     exit 1
@@ -165,7 +144,7 @@ function Get-RegexEscaped([string]$Text) {
 function From-Github($it) {
     $path = $script:Link.Substring($script:Link.IndexOf('github.com/') + 'github.com/'.Length)
     $owner, $project = $path.Split('/') | Select-Object -First 2
-    if (-not $owner -or -not $project) { Stop-WithError "no owner/repo in $($script:Link)" }
+    if (-not $owner -or -not $project) { Stop-MakeError "no owner/repo in $($script:Link)" }
     $it.repo = "$owner/$($project -replace '\.git$', '')"
     $script:Label = $it.repo
     # the same URL Resolve-LatestAsset asks for, so its check comes from the cache
@@ -237,106 +216,114 @@ function Find-ChecksumFile($it) {
     $it.checksum = ''
 }
 
-# --------------------------------------------------------------------------
-function Stop-WithUsage([string]$Text) {
-    Write-Err "make-update-cfg.ps1: $Text"
-    Show-Usage -ToError
+function Stop-MakeUsage([string]$Text) {
+    Write-Err "update-tools.ps1 make: $Text"
+    Show-MakeUsage -ToError
     exit 2
 }
-if ($Help -or (-not $Mode -and -not $Link -and -not $Url)) { Show-Usage; exit 0 }
-if (-not $Mode) { Stop-WithUsage 'need -m TYPE' }
-if ($Latest -and $Prerelease) { Stop-WithUsage "-l and -p can't be used together" }
-# with -u, the one unnamed argument is NAME
-if ($Url) {
-    if ($Name) { Stop-WithUsage "too many arguments: $Link $Name" }
-    $Name = $Link; $Link = $Url
-}
-if (-not $Link) { Stop-WithUsage 'need a LINK' }
-$script:Prerelease = [bool]$Prerelease
-$script:Type = switch ($Mode) {
-    { $_ -in 'apw', 'apworlds' } { 'apw' }
-    { $_ -in 'iso', 'isos' } { 'iso' }
-    default { Stop-WithUsage "TYPE is apw or iso (got '$Mode')" }
-}
-$script:DebugOn = [bool]$Debug -or ($env:DEBUG -and $env:DEBUG -ne '0')
-$script:Link = if ($Link -match '://') { $Link } else { "https://$Link" }
-$script:Now = Get-Date
-$script:CheckedAt = $script:Now.ToString("yyyy-MM-dd'T'HH:mm")
-$s = Get-ModeSettings $script:Type
-$script:Ext = $s.Ext
 
-$dir = if ($Root) { $Root } else { (Get-Settings)[$s.DirKey] }
-if (-not $dir) { Stop-WithError "no folder set for $($s.Title): add $($s.DirKey)=DIR to $(Format-Path $script:SettingsFile), or use -Root DIR" }
-$dir = $dir.TrimEnd('/', '\')
-if ($dir -match '^[A-Za-z]:$') { $dir += '\' }
-if (-not (Test-Path -LiteralPath $dir -PathType Container)) { Stop-WithError "$dir not found. $($s.NotFoundHint)" }
-$script:Dir = (Resolve-Path -LiteralPath $dir).ProviderPath
-$script:IsoDir = $script:Dir
-$cfgDir = Join-Path (Join-Path $script:Dir '.update-tools') 'db'
-
-$it = @{}
-$script:Tag = ''; $script:Asset = ''; $script:DefaultName = ''
-if ($script:Link -match '^[a-z]+://(www\.)?github\.com/') { From-Github $it }
-elseif ($script:Link -match '^[a-z]+://gitlab\.com/') { From-Gitlab $it }
-else { From-Static $it }
-# only GitHub marks pre-releases
-if ($it.manager -ne 'github' -and $script:Prerelease) { Say '⚠ -p only applies to GitHub releases, ignored' }
-
-$cfgName = if ($Name) { $Name } else { $script:DefaultName }
-if (-not $cfgName -or $cfgName -match '[/\\]') { Stop-WithError "can't make a cfg name from the link; pass NAME" }
-$cfg = Join-Path $cfgDir "$cfgName.json"
-if (Test-Path -LiteralPath $cfg) { Stop-WithError "$(Format-Path $cfg) already exists" }
-$script:Label = $cfgName
-$it.name = $cfgName
-
-# what update-tools.ps1 will find, with the cfg as written
-if ((Resolve-LatestAsset $it) -ne 0) { exit 1 }
-Debug-Line "resolves to $($it.latest_tag): $($it.asset_name)"
-if ($script:Asset -and $it.asset_name -ne $script:Asset) {
-    Stop-WithError "the cfg would find $($it.asset_name), not $($script:Asset); nothing written"
-}
-
-$pairs = [ordered]@{}
-if ($script:Type -eq 'iso') {
-    Find-ChecksumFile $it
-    if (-not $it.checksum) { Say "⚠ $($cfgName): no checksum file found next to the ISO; add `"checksum`" by hand (required)" }
-    $pairs.folder = $cfgName
-}
-$pairs.manager = $it.manager
-switch ($it.manager) {
-    'github' { $pairs.repo = $it.repo }
-    'gitlab' { $pairs.repo_url = $it.repo_url }
-    'static' { $pairs.url = $it.url }
-}
-if ($it.repo_filename) { $pairs.repo_filename = $it.repo_filename }
-if ($it.repo_regex) { $pairs.repo_regex = $it.repo_regex }
-if ($it.allow_prereleases) { $pairs.allow_prereleases = $it.allow_prereleases }
-if ($it.checksum) { $pairs.checksum = $it.checksum }
-
-# several worlds may share a repo, so this is only a warning; a cfg that isn't
-# valid JSON is passed over
-$what = if ($it.url) { 'URL' } else { 'repo' }
-if (Test-Path -LiteralPath $cfgDir) {
-    foreach ($other in Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like '*.json' }) {
-        try { $o = ConvertFrom-JsonText ([IO.File]::ReadAllText($other.FullName)) } catch { continue }
-        if (-not ($o -is [Collections.IDictionary])) { continue }
-        $same = $false
-        foreach ($k in 'repo', 'repo_url', 'url') {
-            if ($it[$k] -and $o[$k] -is [string] -and $o[$k] -ceq $it[$k]) { $same = $true }
-        }
-        if ($same) { Say "⚠ $($cfgName): $($other.Name) already uses this $what" }
+# update-tools.ps1 make: the parameters as update-tools.ps1 got them; $Given is
+# the arguments for the session log, started once they've been checked (so -h
+# and usage errors leave none, as in the bash version).
+function Invoke-Make([string]$Link, [string]$Name, [string]$Mode, [string]$Url,
+                     [bool]$Latest, [bool]$Prerelease, [string]$Root,
+                     [bool]$DebugFlag, [string]$Given) {
+    if (-not $Mode -and -not $Link -and -not $Url) { Show-MakeUsage; exit 0 }
+    if (-not $Mode) { Stop-MakeUsage 'need -m TYPE' }
+    if ($Latest -and $Prerelease) { Stop-MakeUsage "-l and -p can't be used together" }
+    # with -u, the one unnamed argument is NAME
+    if ($Url) {
+        if ($Name) { Stop-MakeUsage "too many arguments: $Link $Name" }
+        $Name = $Link; $Link = $Url
     }
-}
+    if (-not $Link) { Stop-MakeUsage 'need a LINK' }
+    $script:Prerelease = [bool]$Prerelease
+    $script:Type = switch ($Mode) {
+        { $_ -in 'apw', 'apworlds' } { 'apw' }
+        { $_ -in 'iso', 'isos' } { 'iso' }
+        default { Stop-MakeUsage "TYPE is apw or iso (got '$Mode')" }
+    }
+    $script:DebugOn = $DebugFlag -or ($env:DEBUG -and $env:DEBUG -ne '0')
+    $script:Link = if ($Link -match '://') { $Link } else { "https://$Link" }
+    $script:Now = Get-Date
+    $script:CheckedAt = $script:Now.ToString("yyyy-MM-dd'T'HH:mm")
+    Start-Log "make $Given"
+    $s = Get-ModeSettings $script:Type
+    $script:Ext = $s.Ext
 
-# the link as the comment, then the keys in the order above
-[void](New-Item -ItemType Directory -Force -Path $cfgDir)
-$tree = New-JsonObject
-$tree['comment'] = $script:Link
-foreach ($k in $pairs.Keys) { $tree[$k] = [string]$pairs[$k] }
-Write-JsonFile $cfg $tree
-$tagShown = if ($script:Tag) { "$($script:Tag): " } else { '' }
-Say "✓ wrote $(Format-Path $cfg) ($tagShown$($it.asset_name)):"
-[IO.File]::ReadAllLines($cfg) | ForEach-Object { Say "    $_" }
-if ($script:Type -eq 'iso') { Say "  `"folder`": `"$cfgName`" is a guess: set it to the ISO's folder under $(Format-Path $script:Dir)" }
-Say "  update-tools.ps1 -m $($script:Type) -c shows the install; a run without -c does it"
-exit 0
+    $dir = if ($Root) { $Root } else { (Get-Settings)[$s.DirKey] }
+    if (-not $dir) { Stop-MakeError "no folder set for $($s.Title): add $($s.DirKey)=DIR to $(Format-Path $script:SettingsFile), or use -Root DIR" }
+    $dir = $dir.TrimEnd('/', '\')
+    if ($dir -match '^[A-Za-z]:$') { $dir += '\' }
+    if (-not (Test-Path -LiteralPath $dir -PathType Container)) { Stop-MakeError "$dir not found. $($s.NotFoundHint)" }
+    $script:Dir = (Resolve-Path -LiteralPath $dir).ProviderPath
+    $script:IsoDir = $script:Dir
+    $cfgDir = Join-Path (Join-Path $script:Dir '.update-tools') 'db'
+
+    $it = @{}
+    $script:Tag = ''; $script:Asset = ''; $script:DefaultName = ''
+    if ($script:Link -match '^[a-z]+://(www\.)?github\.com/') { From-Github $it }
+    elseif ($script:Link -match '^[a-z]+://gitlab\.com/') { From-Gitlab $it }
+    else { From-Static $it }
+    # only GitHub marks pre-releases
+    if ($it.manager -ne 'github' -and $script:Prerelease) { Say '⚠ -p only applies to GitHub releases, ignored' }
+
+    $cfgName = if ($Name) { $Name } else { $script:DefaultName }
+    if (-not $cfgName -or $cfgName -match '[/\\]') { Stop-MakeError "can't make a cfg name from the link; pass NAME" }
+    $cfg = Join-Path $cfgDir "$cfgName.json"
+    if (Test-Path -LiteralPath $cfg) { Stop-MakeError "$(Format-Path $cfg) already exists" }
+    $script:Label = $cfgName
+    $it.name = $cfgName
+
+    # what update-tools.ps1 will find, with the cfg as written
+    if ((Resolve-LatestAsset $it) -ne 0) { exit 1 }
+    Debug-Line "resolves to $($it.latest_tag): $($it.asset_name)"
+    if ($script:Asset -and $it.asset_name -ne $script:Asset) {
+        Stop-MakeError "the cfg would find $($it.asset_name), not $($script:Asset); nothing written"
+    }
+
+    $pairs = [ordered]@{}
+    if ($script:Type -eq 'iso') {
+        Find-ChecksumFile $it
+        if (-not $it.checksum) { Say "⚠ $($cfgName): no checksum file found next to the ISO; add `"checksum`" by hand (required)" }
+        $pairs.folder = $cfgName
+    }
+    $pairs.manager = $it.manager
+    switch ($it.manager) {
+        'github' { $pairs.repo = $it.repo }
+        'gitlab' { $pairs.repo_url = $it.repo_url }
+        'static' { $pairs.url = $it.url }
+    }
+    if ($it.repo_filename) { $pairs.repo_filename = $it.repo_filename }
+    if ($it.repo_regex) { $pairs.repo_regex = $it.repo_regex }
+    if ($it.allow_prereleases) { $pairs.allow_prereleases = $it.allow_prereleases }
+    if ($it.checksum) { $pairs.checksum = $it.checksum }
+
+    # several worlds may share a repo, so this is only a warning; a cfg that isn't
+    # valid JSON is passed over
+    $what = if ($it.url) { 'URL' } else { 'repo' }
+    if (Test-Path -LiteralPath $cfgDir) {
+        foreach ($other in Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like '*.json' }) {
+            try { $o = ConvertFrom-JsonText ([IO.File]::ReadAllText($other.FullName)) } catch { continue }
+            if (-not ($o -is [Collections.IDictionary])) { continue }
+            $same = $false
+            foreach ($k in 'repo', 'repo_url', 'url') {
+                if ($it[$k] -and $o[$k] -is [string] -and $o[$k] -ceq $it[$k]) { $same = $true }
+            }
+            if ($same) { Say "⚠ $($cfgName): $($other.Name) already uses this $what" }
+        }
+    }
+
+    # the link as the comment, then the keys in the order above
+    [void](New-Item -ItemType Directory -Force -Path $cfgDir)
+    $tree = New-JsonObject
+    $tree['comment'] = $script:Link
+    foreach ($k in $pairs.Keys) { $tree[$k] = [string]$pairs[$k] }
+    Write-JsonFile $cfg $tree
+    $tagShown = if ($script:Tag) { "$($script:Tag): " } else { '' }
+    Say "✓ wrote $(Format-Path $cfg) ($tagShown$($it.asset_name)):"
+    [IO.File]::ReadAllLines($cfg) | ForEach-Object { Say "    $_" }
+    if ($script:Type -eq 'iso') { Say "  `"folder`": `"$cfgName`" is a guess: set it to the ISO's folder under $(Format-Path $script:Dir)" }
+    Say "  update-tools.ps1 -m $($script:Type) -c shows the install; a run without -c does it"
+    exit 0
+}

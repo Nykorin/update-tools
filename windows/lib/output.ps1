@@ -8,7 +8,7 @@ $script:Total = 0
 $script:Title = ''
 $script:Plain = [Console]::IsOutputRedirected
 $script:DebugOn = $false
-# set while make-update-cfg tries lookups that are allowed to fail
+# set while update-tools.ps1 make tries lookups that are allowed to fail
 $script:Quiet = $false
 
 # The session log, one per run (Start-Log), as in the bash version: every
