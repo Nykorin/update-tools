@@ -3,6 +3,18 @@
 # TYPE_HOOK in apworlds.ps1 and isos.ps1; a missing one does nothing.
 # Loaded by update-tools.ps1.
 
+# Set by the menu (menu.ps1): the single items chosen per mode (ModeItems, a
+# list of names; a mode not in it runs all its items), the lists the check
+# fills (AvailableList: TYPE<tab>NAME<tab>VERSION per update found;
+# SummaryLines: TITLE<tab>LINE), and a heading for every mode with HeadingNote
+# after the title. Shown is the version an update would bring.
+$script:ModeItems = @{}
+$script:AvailableList = $null
+$script:SummaryLines = $null
+$script:AlwaysHeadings = $false
+$script:HeadingNote = ''
+$script:Shown = ''
+
 # Each mode's settings: its title, cfg extension, key in the settings file, and
 # the hints for a missing folder.
 function Get-ModeSettings([string]$Type) {
@@ -32,19 +44,25 @@ function Report-UpToDate($it) {
 # The mode's summary, after its last item: what went well in one line, then the
 # items that need a look, by name, so a long run's failures can't hide in the
 # scrollback. $T holds the tallies from Invoke-Mode.
+# A summary line: printed, and kept for the menu's download list (its header).
+function Say-Summary([string]$Text) {
+    Say $Text
+    if ($null -ne $script:SummaryLines) { $script:SummaryLines.Add("$((Get-ModeSettings $script:Type).Title)`t$Text") }
+}
+
 function Write-Summary($T) {
     $parts = @()
     if ($T.updated)   { $parts += "$($T.updated) updated" }
     if ($T.installed) { $parts += "$($T.installed) installed" }
     if ($T.current)   { $parts += "$($T.current) up to date" }
     if ($T.recent)    { $parts += "$($T.recent) checked recently" }
-    if ($parts.Count) { Say "✓ $($parts -join ', ')" }
+    if ($parts.Count) { Say-Summary "✓ $($parts -join ', ')" }
     if ($T.available.Count) {
         $word = if ($T.available.Count -eq 1) { 'update' } else { 'updates' }
-        Say "⬆ $($T.available.Count) $word available: $($T.available -join ', ')"
+        Say-Summary "⬆ $($T.available.Count) $word available: $($T.available -join ', ')"
     }
-    if ($T.problems.Count) { Say "⚠ $($T.problems.Count) skipped or failed: $($T.problems -join ', ')" }
-    if ($T.unchecked) { Say "⚠ $($T.unchecked) not checked (GitHub rate limit)" }
+    if ($T.problems.Count) { Say-Summary "⚠ $($T.problems.Count) skipped or failed: $($T.problems -join ', ')" }
+    if ($T.unchecked) { Say-Summary "⚠ $($T.unchecked) not checked (GitHub rate limit)" }
 }
 
 # One cfg: check it, and update it if needed. The same steps for every mode,
@@ -101,7 +119,8 @@ function Invoke-UpdateItem([string]$CfgFile, [int]$Index, [int]$Count) {
 
     # -Check: report it, download and write nothing
     if ($script:CheckOnly) {
-        Status-Final "⬆ update available: $(Get-ShownVersion $it $it.asset_name)"
+        $script:Shown = Get-ShownVersion $it $it.asset_name
+        Status-Final "⬆ update available: $($script:Shown)"
         $script:Outcome = 'available'
         return 0
     }
@@ -191,6 +210,11 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
 
     # -Filter would also match *.jsonX on Windows
     $cfgs = @(Get-ChildItem -LiteralPath $cfgDir -File | Where-Object { $_.Name -like '*.json' } | Sort-Object Name | ForEach-Object { $_.FullName })
+    # the menu's choice of single items, by name (none: all of them)
+    if ($script:ModeItems.ContainsKey($Type)) {
+        $wanted = @($script:ModeItems[$Type])
+        $cfgs = @($cfgs | Where-Object { $wanted -ccontains [IO.Path]::GetFileNameWithoutExtension($_) })
+    }
     # the layout from before 2026-11-07 isn't read any more
     $oldDir = Join-Path $script:Dir '.cfg'
     if (Test-Path -LiteralPath $oldDir -PathType Container) { Say "⚠ $oldDir is ignored: cfgs are NAME.json in .update-tools/db now" }
@@ -214,7 +238,11 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
             # a GitHub rate limit: this item wasn't checked either
             if ($rc -eq 2) { $tally.unchecked = $cfgs.Count - $i; break }
             switch ($script:Outcome) {
-                'available' { $tally.available.Add($script:Label) }
+                'available' {
+                    $tally.available.Add($script:Label)
+                    # the menu's list of updates to download
+                    if ($null -ne $script:AvailableList) { $script:AvailableList.Add("$Type`t$($script:Label)`t$($script:Shown)") }
+                }
                 ''          { $tally.problems.Add($script:Label) }
                 default     { $tally[$script:Outcome]++ }
             }
@@ -233,4 +261,27 @@ function Invoke-Mode([string]$Type, [string]$Root, [bool]$All) {
         Stop-Progress
     }
     $true
+}
+
+# Runs each mode in turn, under a ▶ heading when there's more than one (or the
+# menu asks for it), carrying on past one that can't run. $false if any
+# couldn't, after a ⚠ skipped: line when there were several. $All leaves out
+# the -Root hint (each mode's own folder is used).
+function Invoke-Modes([string[]]$Modes, [string]$Root, [bool]$All) {
+    $skipped = @()
+    foreach ($m in $Modes) {
+        $title = (Get-ModeSettings $m).Title
+        if ($Modes.Count -gt 1 -or $script:AlwaysHeadings) {
+            $note = if ($script:HeadingNote) { ": $($script:HeadingNote)" } else { '' }
+            Say "▶ $title$note"
+        }
+        $script:TmpDir = ''
+        if (-not (Invoke-Mode $m $Root $All)) {
+            $skipped += $title
+            if ($null -ne $script:SummaryLines) { $script:SummaryLines.Add("$title`t⚠ couldn't run") }
+        }
+    }
+    if ($skipped.Count -eq 0) { return $true }
+    if ($Modes.Count -gt 1) { Say "⚠ skipped: $($skipped -join ', ')" }
+    $false
 }

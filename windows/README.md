@@ -10,11 +10,11 @@ AppImages are Linux-only, so that mode isn't here. `update-tools.ps1 make` write
 > [!IMPORTANT]
 > **This port was written with AI** (Claude by Anthropic), like the rest of the project. It was tested with PowerShell 7 on Linux, against the same cases as the bash version and with identical results, but **not yet on Windows itself** or in Windows PowerShell 5.1. Read it before running it, start with `-c` (check only), and keep backups of anything you point it at. It comes with no warranty.
 
-It uses the same cfg files and keys as the bash version, so a cfg works in either. Everything else, from the managers to the rules for when an item is up to date, also matches it; see the main [README](../README.md) for the cfg format and the managers. One difference: the bash version's menu (fzf) isn't ported, so here `-m` is always needed. Session logs, as in the bash version, go to `%LOCALAPPDATA%\update-tools\` (the newest 10 are kept).
+It uses the same cfg files and keys as the bash version, so a cfg works in either. Everything else, from the managers to the rules for when an item is up to date, also matches it; see the main [README](../README.md) for the cfg format and the managers. The menu works the same way when fzf is installed; without fzf, `-m` is needed. Session logs, as in the bash version, go to `%LOCALAPPDATA%\update-tools\` (the newest 10 are kept).
 
 ## Requirements
 
-Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else: downloads, JSON, zip files and checksums are all built in.
+Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else: downloads, JSON, zip files and checksums are all built in. For the menu, [fzf](https://github.com/junegunn/fzf) (`winget install fzf`, or Scoop or Chocolatey); without it, pick the kind with `-m`.
 
 ## Setup
 
@@ -41,6 +41,7 @@ Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else
 ## Usage
 
 ```powershell
+.\update-tools.ps1                 # the menu (needs fzf)
 .\update-tools.ps1 -m apw          # update the worlds
 .\update-tools.ps1 -m iso -c       # only check the ISOs, download nothing
 .\update-tools.ps1 -m iso -r F:\   # the Ventoy drive on another letter
@@ -49,12 +50,20 @@ Windows PowerShell 5.1 (part of Windows 10 and 11) or PowerShell 7. Nothing else
 
 | Option | Meaning |
 |---|---|
-| `-m`, `-Mode MODE` | `apw` (`apworlds`), `iso` (`isos`) or `all` |
+| `-m`, `-Mode MODE` | `apw` (`apworlds`), `iso` (`isos`) or `all`; skips the menu |
 | `-c`, `-Check` | look up and compare, then report what would be updated; downloads and writes nothing |
 | `-f`, `-Force` | check items checked within `skip_hours` too |
 | `-r`, `-Root DIR` | use DIR instead of the mode's folder (not with `-m all`) |
 | `-d`, `-Debug` | explain each decision and time each item |
-| `-h`, `-Help [TOPIC]` | show the help: an overview, or one topic: `modes` and `settings` (with the folders in use), `make`, or `all` |
+| `-h`, `-Help [TOPIC]` | show the help: an overview, or one topic: `modes` and `settings` (with the folders in use), `menu`, `make`, or `all` |
+
+Without `-m`, on a console with fzf, `update-tools.ps1` opens the same menu as the bash version:
+
+1. **What to update:** the kinds whose folder is there (Tab marks both, Enter takes them, Esc quits). A kind that can't run is named above the list, with the reason.
+2. **For each kind:** the first line, *check all for updates*, checks every item without downloading anything; or mark single items to update just those. Esc goes back.
+3. **After the check:** the screen is cleared and a list of the updates found opens, all marked, with each kind's summary above it. Unmark what you don't want and press Enter to download the rest, or Esc to download nothing. With `-c`, the run stops after the check and its output stays on screen.
+
+The menu was tested with PowerShell 7 and fzf 0.75 on Linux, against the bash version's menu with the same keys and identical results; it hasn't been tried on Windows yet.
 
 ## Adding an item
 

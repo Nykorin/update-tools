@@ -27,14 +27,14 @@ Set-StrictMode -Version 1
 $ErrorActionPreference = 'Continue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
-foreach ($lib in 'output', 'cfg', 'net', 'managers', 'files', 'apworlds', 'isos', 'main', 'make') {
+foreach ($lib in 'output', 'cfg', 'net', 'managers', 'files', 'apworlds', 'isos', 'main', 'make', 'menu') {
     . (Join-Path (Join-Path $PSScriptRoot 'lib') "$lib.ps1")
 }
 
 # The help, as in the bash version: -h prints the overview (Show-Usage), -h
 # TOPIC one part of it (Show-Topic). A usage error prints the overview to the
 # error stream.
-$script:HelpTopics = @('modes', 'settings', 'make', 'all')
+$script:HelpTopics = @('modes', 'menu', 'settings', 'make', 'all')
 
 function Show-Text([string]$Text, [switch]$ToError) {
     if ($ToError) { Write-Err $Text } else { Say $Text }
@@ -42,12 +42,13 @@ function Show-Text([string]$Text, [switch]$ToError) {
 
 function Show-Usage([switch]$ToError) {
     Show-Text -ToError:$ToError @"
-Usage: update-tools.ps1 -m MODE [OPTIONS]
+Usage: update-tools.ps1 [-m MODE] [OPTIONS]
        update-tools.ps1 make -m MODE [OPTIONS] LINK [NAME]
-Check and update Archipelago worlds and ISOs.
+Check and update Archipelago worlds and ISOs. Without -m, on a console with
+fzf, a menu picks what to update.
 
 Options:
-  -m, -Mode MODE    apw, iso or all (required; -h modes)
+  -m, -Mode MODE    apw, iso or all, without the menu (-h modes)
   -c, -Check        only look for updates: download and change nothing
   -f, -Force        check every item, even ones checked within skip_hours
   -r, -Root DIR     use DIR instead of the mode's folder (not with -m all)
@@ -56,6 +57,7 @@ Options:
 
 Topics (-h TOPIC):
   modes             what each mode updates, and from where
+  menu              the menu, without -m
   settings          the settings file, and what it sets now
   make              writing a new item's cfg (update-tools.ps1 make -h)
   all               every topic
@@ -90,6 +92,21 @@ item isn't there yet is installed.
 "@
 }
 
+function Show-MenuHelp {
+    Show-Text @"
+Menu:
+Without -m, on a console with fzf (winget install fzf), a menu picks what to
+update:
+  1. the kinds (Tab marks several, Enter takes them, Esc quits)
+  2. for each kind, "check all" (the first line), or single marked items,
+     which are updated directly; Esc goes back
+  3. after the check, which downloads nothing, the updates found are listed,
+     all marked: Enter downloads what's still marked, Esc nothing
+With -c the run ends after the check. The check's output is in the session
+log, whose path the list shows. Without fzf, -m is needed.
+"@
+}
+
 function Show-SettingsHelp {
     $v = Get-HelpSettings
     $apw = if ($v.Apw) { $v.Apw } else { '(not set)' }
@@ -110,9 +127,10 @@ ignores both for one run.
 function Show-Topic([string]$Topic) {
     switch ($Topic) {
         'modes'    { Show-Modes }
+        'menu'     { Show-MenuHelp }
         'settings' { Show-SettingsHelp }
         'make'     { Show-MakeUsage }
-        'all'      { Show-Usage; foreach ($t in 'modes', 'settings', 'make') { Say ''; Show-Topic $t } }
+        'all'      { Show-Usage; foreach ($t in 'modes', 'menu', 'settings', 'make') { Say ''; Show-Topic $t } }
         default {
             Write-Err "update-tools.ps1: no help topic '$Topic' ($($script:HelpTopics -join ', '))"
             exit 2
@@ -157,13 +175,29 @@ if ($Url -or $Latest -or $Prerelease) {
     Show-Usage -ToError
     exit 2
 }
-if (-not ($Mode -or $Check -or $Force -or $Root -or $Debug)) { Show-Usage; exit 0 }
-$modes = switch ($Mode) {
-    { $_ -in 'apw', 'apworlds' } { @('apw') }
-    { $_ -in 'iso', 'isos' } { @('iso') }
-    'all' { @('apw', 'iso') }
-    '' { Write-Err 'update-tools.ps1: -Mode is required'; Show-Usage -ToError; exit 2 }
-    default { Write-Err "update-tools.ps1: unknown mode '$Mode' (apw, iso or all)"; Show-Usage -ToError; exit 2 }
+# without -m: the menu on a console with fzf; otherwise -m is needed, and with
+# no arguments at all the help is shown
+$menu = $false
+$modes = @()
+if (-not $Mode) {
+    if ($Root) {
+        Write-Err 'update-tools.ps1: -Root needs -m apw or iso (each mode has its own folder)'
+        exit 2
+    }
+    if (-not (Test-MenuAvailable)) {
+        if (-not ($Check -or $Force -or $Debug)) { Show-Usage; exit 0 }
+        Write-Err 'update-tools.ps1: -Mode is required (or install fzf for the menu)'
+        Show-Usage -ToError
+        exit 2
+    }
+    $menu = $true
+} else {
+    $modes = switch ($Mode) {
+        { $_ -in 'apw', 'apworlds' } { @('apw') }
+        { $_ -in 'iso', 'isos' } { @('iso') }
+        'all' { @('apw', 'iso') }
+        default { Write-Err "update-tools.ps1: unknown mode '$Mode' (apw, iso or all)"; Show-Usage -ToError; exit 2 }
+    }
 }
 if ($Mode -eq 'all' -and $Root) {
     Write-Err 'update-tools.ps1: -Root can''t be used with -m all (each mode has its own folder)'
@@ -180,13 +214,6 @@ $script:CheckedAt = $script:Now.ToString("yyyy-MM-dd'T'HH:mm")
 # the arguments as given, for the log's first line
 Start-Log (Get-GivenArguments $PSBoundParameters)
 
-$skipped = @()
-foreach ($m in $modes) {
-    $title = (Get-ModeSettings $m).Title
-    if ($modes.Count -gt 1) { Say "▶ $title" }
-    $script:TmpDir = ''
-    if (-not (Invoke-Mode $m $Root ($Mode -eq 'all'))) { $skipped += $title }
-}
-if ($skipped.Count -eq 0) { exit 0 }
-if ($modes.Count -gt 1) { Say "⚠ skipped: $($skipped -join ', ')" }
+if ($menu) { $ok = Invoke-Menu } else { $ok = Invoke-Modes $modes $Root ($Mode -eq 'all') }
+if ($ok) { exit 0 }
 exit 1
