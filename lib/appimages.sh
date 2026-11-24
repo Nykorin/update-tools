@@ -5,7 +5,32 @@
 # don't clash with the other modules. It reads (SC2154) and sets (SC2034)
 # variables that main.sh and the shared libraries own.
 
-desktop_entry_path() { echo "$HOME/.local/share/applications/${1}.desktop"; }
+APPS_DIR="$HOME/.local/share/applications"
+desktop_entry_path() { echo "$APPS_DIR/${1}.desktop"; }
+
+# Set when an entry is written or removed, so mode_finish refreshes the
+# desktop database once per run.
+DESKTOP_DB_DIRTY=0
+
+# The database (mimeinfo.cache) maps MIME types to entries; an entry written by
+# an update may list other types than before, so any write counts. A missing
+# update-desktop-database (desktop-file-utils) only warns: the entries work
+# without it, only "Open with" lags.
+mode_finish() {
+    (( DESKTOP_DB_DIRTY )) || return 0
+    DESKTOP_DB_DIRTY=0
+    PROGRESS_LABEL="desktop database"
+    if ! command -v update-desktop-database &>/dev/null; then
+        say "⚠ update-desktop-database not found (desktop-file-utils), the desktop database wasn't refreshed"
+        return 0
+    fi
+    if update-desktop-database -q "$APPS_DIR" 2>/dev/null; then
+        debug "refreshed ($(tilde "$APPS_DIR"))"
+    else
+        say "⚠ update-desktop-database $(tilde "$APPS_DIR") failed"
+    fi
+    return 0
+}
 
 # Writes the entry if it's missing, or if db/NAME.desktop no longer matches
 # it (an edited file applies on the next run).
@@ -172,6 +197,8 @@ EOF
     if ! { chmod 444 "$entry_tmp" && mv -f "$entry_tmp" "$desktop_dest"; }; then
         say "  ✗ $name: could not write ${desktop_dest##*/}"
         rm -f "$entry_tmp"
+    else
+        DESKTOP_DB_DIRTY=1
     fi
     DESKTOP_ENTRY_TMP=""
     rm -rf "$tmp_extract"
@@ -246,6 +273,87 @@ item_extras() {
     generate_desktop_entry "$name" "$target"
 }
 
+# -u: removes each app named (by its cfg name): the AppImage, its desktop entry,
+# its icon (icons/NAME.* and icons/ICON.*, unless another entry names ICON too),
+# then db/NAME.desktop and the cfg, last, so an interrupted uninstall can be
+# run again. On a terminal it lists the files and asks first; -c only lists
+# them. Returns 1 if any app wasn't found or wasn't removed in full.
+uninstall_items() {
+    local name cfg_file entry icon f answer failed=0 shown
+    local -a files
+    for name; do
+        PROGRESS_LABEL="$name"
+        cfg_file="$CFG_DIR/$name.json"
+        if [[ ! -f "$cfg_file" ]]; then
+            say "✗ $name: no cfg ($(tilde "$cfg_file")), nothing uninstalled"
+            failed=1; continue
+        fi
+        # an unreadable cfg can't say which AppImage is the app's
+        if ! load_item "$cfg_file"; then
+            failed=1; continue
+        fi
+
+        files=()
+        f=$(find_installed "$dir"); [[ -n "$f" ]] && files+=("$f")
+        entry=$(desktop_entry_path "$name")
+        # the icon the entry names, as generate_desktop_entry chose it
+        icon=""
+        if [[ -f "$entry" ]]; then
+            files+=("$entry")
+            icon=$(sed -n '/^Icon=/{s///;s/\r$//;p;q}' "$entry")
+        fi
+        icon="${icon:-${icon_name:-$name}}"
+        [[ "$icon" == */* ]] && icon="$name"
+        # an icon another entry names stays (two apps with one icon_name)
+        if [[ "$icon" != "$name" ]] &&
+           grep -qlx --exclude="${entry##*/}" "Icon=$icon" "$APPS_DIR"/*.desktop 2>/dev/null; then
+            debug "icon $icon kept: another desktop entry names it"
+            icon="$name"
+        fi
+        while IFS= read -r -d '' f; do files+=("$f"); done < <(
+            find "$ICONS_DIR" -maxdepth 1 \( \
+                -iname "$name.png" -o -iname "$name.svg" -o -iname "$name.xpm" -o -iname "$name.ico" -o \
+                -iname "$icon.png" -o -iname "$icon.svg" -o -iname "$icon.xpm" -o -iname "$icon.ico" \
+                \) -print0 2>/dev/null)
+        f=$(desktop_sidecar "$name"); [[ -f "$f" ]] && files+=("$f")
+        files+=("$cfg_file")
+        [[ -z "${installed_file:-}" || -n "$(find_installed "$dir")" ]] ||
+            say "⚠ $name: $installed_file is already gone"
+
+        printf -v shown '%s, ' "${files[@]##*/}"
+        shown="${shown%, }"
+        if [[ "$check_only" == true ]]; then
+            say "$name: would remove $shown"
+            continue
+        fi
+        if [[ -t 0 && -t 1 ]]; then
+            say "$name: removes"
+            for f in "${files[@]}"; do say "  $(tilde "$f")"; done
+            read -r -p "Uninstall $name? [y/N] " answer
+            if [[ "${answer,,}" != y && "${answer,,}" != yes ]]; then
+                say "$name: not uninstalled"
+                continue
+            fi
+        fi
+
+        # the cfg last: if anything fails, it's still there for another try
+        for f in "${files[@]}"; do
+            [[ "$f" == "$cfg_file" ]] && continue
+            if ! rm -f "$f"; then
+                say "✗ $name: could not remove $(tilde "$f"), kept its cfg"
+                failed=1; continue 2
+            fi
+            [[ "$f" == "$entry" ]] && DESKTOP_DB_DIRTY=1
+        done
+        if ! rm -f "$cfg_file"; then
+            say "✗ $name: could not remove $(tilde "$cfg_file")"
+            failed=1; continue
+        fi
+        say "✓ $name: uninstalled ($shown)"
+    done
+    PROGRESS_LABEL=""
+    return "$failed"
+}
 
 prepare_dir() {
     ICONS_DIR="$dir/.update-tools/icons"

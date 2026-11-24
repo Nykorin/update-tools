@@ -34,12 +34,14 @@ tmp_download="" tmp_extract_dir="" DESKTOP_TMP="" DESKTOP_ENTRY_TMP=""
 
 # The EXIT trap: removes the GitHub headers file, curl_run's log, timed's files
 # and any staged download or extraction, and settles an old version still set
-# aside (back, unless the new one is in). rm -f ignores an empty name, so unset
+# aside (back, unless the new one is in), and runs the mode's mode_finish
+# (after a Ctrl+C; a finished mode has run it already). rm -f ignores an empty name, so unset
 # ones need no check.
 cleanup() {
     rm -f "$GITHUB_HEADERS" "${CURL_LOG:-}" "${TIMED_FILES[@]}" "$tmp_download" "$DESKTOP_ENTRY_TMP"
     rm -rf "$tmp_extract_dir" "$DESKTOP_TMP"
     settle_previous
+    mode_finish
     # ISOs need tmp/ only during an update
     [[ "${ITEM_TYPE:-}" == iso && -n "${TMP_DIR:-}" ]] && rmdir "$TMP_DIR" 2>/dev/null
     return 0

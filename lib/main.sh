@@ -178,6 +178,9 @@ item_preflight()     { :; }   # before downloading (ISOs: free space)
 item_stage()         { tmp_download="$TMP_DIR/download-$asset_name"; }
 item_validate()      { :; }   # after downloading; may set new_file and candidate
 item_extras()        { :; }   # after installing (AppImages: desktop entry; ISOs: checksum file)
+# once per mode, after its last item, and from the EXIT trap after a Ctrl+C
+# (AppImages: refresh the desktop database)
+mode_finish()        { :; }
 
 # One cfg: check it, and update it if needed. The same steps for every mode,
 # with the module's hooks where they differ. Returns 2 to stop the whole run.
@@ -330,6 +333,7 @@ process_item() {
 # command missing) ends only that mode.
 # shellcheck disable=SC2034  # its locals are read by the module's process_item
 run_mode() {
+    local rc
     ITEM_TYPE="$1"
     item_settings
     load_module || exit 1
@@ -359,6 +363,13 @@ run_mode() {
 
     start_run
 
+    # -u (AppImages only, parse_flags makes sure): no updates in this run
+    if (( ${#UNINSTALL_NAMES[@]} )); then
+        uninstall_items "${UNINSTALL_NAMES[@]}"; rc=$?
+        mode_finish
+        return "$rc"
+    fi
+
     shopt -s nullglob
     local cfg_files=("$CFG_DIR"/*.json) f
     # the menu's choice of single items, by name (empty: all of them)
@@ -383,6 +394,7 @@ run_mode() {
 
     timed "total" run_items
 
+    mode_finish
     finish_progress
 }
 

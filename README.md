@@ -59,6 +59,7 @@ update-tools -m apw          # update the worlds
 update-tools -m iso -c       # only check the ISOs, download nothing
 update-tools -m iso -r /run/media/me/Ventoy
 update-tools -m all          # all three in turn, no menu
+update-tools -u foo          # uninstall the AppImage whose cfg is foo.json
 ```
 
 Without `-m`, on a terminal, `update-tools` opens a menu ([fzf](https://github.com/junegunn/fzf)):
@@ -75,10 +76,15 @@ Without a terminal (cron, a pipe) or without fzf, it runs all three, as `-m all`
 | `-c`, `--check` | look up and compare, then report what would be updated; downloads and writes nothing |
 | `-f`, `--force` | check items checked within `skip_hours` too; for AppImages, also rebuild each desktop entry and icon |
 | `-r`, `--root DIR` | use DIR instead of the folder set in the settings (only with `-m app`, `apw` or `iso`) |
+| `-u`, `--uninstall NAME` | remove AppImage NAME (see below); repeat it for several; implies `-m app` |
 | `-d`, `--debug` | explain each decision and time each item (or `DEBUG=1`) |
 | `-h`, `--help` | show the help |
 
 Each item is checked at most once per `skip_hours` (24 by default) unless `-f` is given or `skip_checked=off`. On a terminal the output is a live two-line status block with an overall progress bar; redirected output is plain text without escape codes. Each run ends with a summary per kind: how many items were updated, installed, up to date or checked recently, and by name the ones with an update available (`-c`) and the ones skipped or failed, so a problem in a long run can't hide in the scrollback. When GitHub requests were made, the last line shows how many of the hourly request budget are left.
+
+`-u NAME` uninstalls an AppImage by its cfg name: it removes the AppImage, its desktop entry, its icon in `.update-tools/icons/` (unless another desktop entry names the same icon), `db/NAME.desktop` if there is one, and the cfg itself, last, so the next run doesn't install it again. On a terminal it lists the files and asks first; with `-c` it only lists them.
+
+Whenever a run writes or removes a desktop entry, it then refreshes the desktop database (`update-desktop-database ~/.local/share/applications`, from desktop-file-utils), so "Open with" knows the app's file types. Without that command the run warns and goes on.
 
 Every run also writes a session log, `~/.cache/update-tools/session-DATE_TIME.log` (or under `$XDG_CACHE_HOME`): the date and the arguments, then every result, warning, heading and summary in plain text (with the menu, also what was chosen for download). The newest 10 are kept, so an earlier run, such as one from cron, can still be looked up.
 

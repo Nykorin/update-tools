@@ -6,6 +6,8 @@ ROOT_ARG=""
 # What -m asked for: app, apw or iso, all (all three, no menu), or empty
 # (no -m: the menu on a terminal, all three otherwise).
 RUN_TYPE=""
+# -u: the AppImages to uninstall (cfg names); implies -m app.
+UNINSTALL_NAMES=()
 
 # The help text: -h, and after a bad option (to stderr). The folders and the
 # skip are the ones the settings file sets.
@@ -54,6 +56,11 @@ Options:
                     for AppImages, also rebuild each desktop entry and its icon
   -r, --root DIR    use DIR instead of the mode's folder (only with -m app,
                     apw or iso)
+  -u, --uninstall NAME
+                    remove AppImage NAME (its cfg's name): the AppImage, its
+                    desktop entry, its icon, and db/NAME.json and
+                    db/NAME.desktop; asks first on a terminal, -c only lists
+                    the files. Repeat it for several; implies -m app
   -d, --debug       explain each decision and time each item (or DEBUG=1)
   -h, --help        show this help
 EOF
@@ -76,8 +83,8 @@ paint_text() {
 }
 
 
-# Sets RUN_TYPE (-m), force, check_only, DEBUG and ROOT_ARG (-r, only with
-# -m app, apw or iso); -h prints usage, and a bad option prints it to stderr.
+# Sets RUN_TYPE (-m), force, check_only, DEBUG, UNINSTALL_NAMES (-u) and
+# ROOT_ARG (-r, only with -m app, apw or iso); -h prints usage, and a bad option prints it to stderr.
 # shellcheck disable=SC2034  # force and check_only are read by the modes
 parse_flags() {
     local m
@@ -107,12 +114,31 @@ parse_flags() {
                 if [[ -z "$ROOT_ARG" ]]; then
                     echo "${0##*/}: ${1%%=*} needs a folder" >&2; usage >&2; exit 2
                 fi ;;
+            -u|--uninstall|--uninstall=*)
+                if [[ "$1" == --uninstall=* ]]; then
+                    m="${1#--uninstall=}"
+                else
+                    m="${2:-}"; (( $# > 1 )) && shift
+                fi
+                # a cfg name, never a path
+                if [[ -z "$m" || "$m" == */* || "$m" == . || "$m" == .. ]]; then
+                    echo "${0##*/}: -u needs an AppImage's cfg name (db/NAME.json), not '$m'" >&2
+                    exit 2
+                fi
+                UNINSTALL_NAMES+=("${m%.json}") ;;
             -d|--debug) DEBUG=1 ;;
             -h|--help)  usage | paint_text; exit 0 ;;
             *)          echo "${0##*/}: unknown option '$1'" >&2; usage >&2; exit 2 ;;
         esac
         shift
     done
+    if (( ${#UNINSTALL_NAMES[@]} )); then
+        case "$RUN_TYPE" in
+            "")  RUN_TYPE=app ;;
+            app) ;;
+            *)   echo "${0##*/}: -u uninstalls AppImages only (-m app)" >&2; exit 2 ;;
+        esac
+    fi
     case "$RUN_TYPE" in
         app|apw|iso) ;;
         *)
