@@ -273,14 +273,52 @@ item_extras() {
     generate_desktop_entry "$name" "$target"
 }
 
-# -u: removes each app named (by its cfg name): the AppImage, its desktop entry,
-# its icon (icons/NAME.* and icons/ICON.*, unless another entry names ICON too),
-# then db/NAME.desktop and the cfg, last, so an interrupted uninstall can be
-# run again. On a terminal it lists the files and asks first; -c only lists
-# them. Returns 1 if any app wasn't found or wasn't removed in full.
+# A bare -u: the installed AppImages (cfgs whose installed_file is still
+# there) in fzf, several can be marked; prints the chosen cfg names. Esc
+# chooses none.
+pick_installed() {
+    local f name file size
+    local -a lines=()
+    for f in "$CFG_DIR"/*.json; do
+        [[ -f "$f" ]] || continue
+        name="${f##*/}"; name="${name%.json}"
+        file=$(jq -r '.state.installed_file // empty' "$f" 2>/dev/null)
+        [[ -n "$file" && -f "$dir/$file" ]] || continue
+        size=$(du -h --apparent-size "$dir/$file" 2>/dev/null); size="${size%%$'\t'*}"
+        lines+=("$(printf '%s\t%-28s %-52s %6s' "$name" "$name" "$file" "$size")")
+    done
+    if (( ${#lines[@]} == 0 )); then
+        say "⚠ no installed AppImages in $(tilde "$dir")"
+        return 0
+    fi
+    printf '%s\n' "${lines[@]}" |
+        menu_fzf --header="Uninstall which AppImages?  (Tab: mark, Enter: go, Esc: quit)" |
+        cut -f1
+}
+
+# -u: removes each app named (by its cfg name), or picked (pick_installed): the
+# AppImage, its desktop entry, its icon (icons/NAME.* and icons/ICON.*, unless
+# another entry names ICON too), then db/NAME.desktop and the cfg, last, so an
+# interrupted uninstall can be run again. On a terminal it lists every app's
+# files and asks once; -c only lists them. Returns 1 if any app wasn't found
+# or wasn't removed in full.
 uninstall_items() {
     local name cfg_file entry icon f answer failed=0 shown
-    local -a files
+    local -a files names=()
+    local -A plan=()
+
+    if (( $# == 0 )); then
+        if ! menu_available; then
+            say "✗ -u without a name needs a terminal and fzf; name the AppImage: -u NAME"
+            return 1
+        fi
+        mapfile -t names < <(pick_installed)
+        (( ${#names[@]} )) || return 0
+        set -- "${names[@]}"
+        names=()
+    fi
+
+    # what each app removes, as newline-separated paths
     for name; do
         PROGRESS_LABEL="$name"
         cfg_file="$CFG_DIR/$name.json"
@@ -295,6 +333,7 @@ uninstall_items() {
 
         files=()
         f=$(find_installed "$dir"); [[ -n "$f" ]] && files+=("$f")
+        [[ -z "${installed_file:-}" || -n "$f" ]] || say "⚠ $name: $installed_file is already gone"
         entry=$(desktop_entry_path "$name")
         # the icon the entry names, as generate_desktop_entry chose it
         icon=""
@@ -317,25 +356,41 @@ uninstall_items() {
                 \) -print0 2>/dev/null)
         f=$(desktop_sidecar "$name"); [[ -f "$f" ]] && files+=("$f")
         files+=("$cfg_file")
-        [[ -z "${installed_file:-}" || -n "$(find_installed "$dir")" ]] ||
-            say "⚠ $name: $installed_file is already gone"
 
-        printf -v shown '%s, ' "${files[@]##*/}"
-        shown="${shown%, }"
-        if [[ "$check_only" == true ]]; then
-            say "$name: would remove $shown"
-            continue
-        fi
-        if [[ -t 0 && -t 1 ]]; then
+        [[ -v "plan[$name]" ]] || names+=("$name")
+        printf -v "plan[$name]" '%s\n' "${files[@]}"
+    done
+    PROGRESS_LABEL=""
+    (( ${#names[@]} )) || return "$failed"
+
+    if [[ "$check_only" == true ]]; then
+        for name in "${names[@]}"; do
+            mapfile -t files <<<"${plan[$name]%$'\n'}"
+            printf -v shown '%s, ' "${files[@]##*/}"
+            say "$name: would remove ${shown%, }"
+        done
+        return "$failed"
+    fi
+    if [[ -t 0 && -t 1 ]]; then
+        for name in "${names[@]}"; do
             say "$name: removes"
-            for f in "${files[@]}"; do say "  $(tilde "$f")"; done
-            read -r -p "Uninstall $name? [y/N] " answer
-            if [[ "${answer,,}" != y && "${answer,,}" != yes ]]; then
-                say "$name: not uninstalled"
-                continue
-            fi
+            while IFS= read -r f; do say "  $(tilde "$f")"; done <<<"${plan[$name]%$'\n'}"
+        done
+        f="${names[*]}"
+        (( ${#names[@]} > 1 )) && f="${#names[@]} AppImages (${f// /, })"
+        read -r -p "Uninstall $f? [y/N] " answer
+        if [[ "${answer,,}" != y && "${answer,,}" != yes ]]; then
+            say "nothing uninstalled"
+            return "$failed"
         fi
+    fi
 
+    for name in "${names[@]}"; do
+        PROGRESS_LABEL="$name"
+        cfg_file="$CFG_DIR/$name.json"
+        entry=$(desktop_entry_path "$name")
+        mapfile -t files <<<"${plan[$name]%$'\n'}"
+        printf -v shown '%s, ' "${files[@]##*/}"
         # the cfg last: if anything fails, it's still there for another try
         for f in "${files[@]}"; do
             [[ "$f" == "$cfg_file" ]] && continue
@@ -349,7 +404,7 @@ uninstall_items() {
             say "✗ $name: could not remove $(tilde "$cfg_file")"
             failed=1; continue
         fi
-        say "✓ $name: uninstalled ($shown)"
+        say "✓ $name: uninstalled (${shown%, })"
     done
     PROGRESS_LABEL=""
     return "$failed"

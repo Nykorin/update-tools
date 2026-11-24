@@ -364,7 +364,7 @@ run_mode() {
     start_run
 
     # -u (AppImages only, parse_flags makes sure): no updates in this run
-    if (( ${#UNINSTALL_NAMES[@]} )); then
+    if (( ${#UNINSTALL_NAMES[@]} || UNINSTALL_PICK )); then
         uninstall_items "${UNINSTALL_NAMES[@]}"; rc=$?
         mode_finish
         return "$rc"

@@ -9,8 +9,12 @@ Each bullet starts with the file it touches. "both updaters" means `update-appim
 ## [2026-11-24]
 
 ### Added
+- **lib/appimages.sh, lib/cli.sh, lib/main.sh, README.md:** `update-tools -u` without a name (nothing after it, or another option) opens a list of the installed AppImages in fzf, with each one's file and size; Tab marks several, Enter uninstalls them, Esc quits. It needs a terminal and fzf; without them it says so and exits 1 *(Claude, directed by user)*
 - **lib/appimages.sh, lib/cli.sh, lib/main.sh, README.md:** `update-tools -u NAME` (`--uninstall`, repeatable, implies `-m app`) uninstalls an AppImage by its cfg name: the AppImage, its desktop entry, its icon in `.update-tools/icons/` (kept when another desktop entry names the same icon), `db/NAME.desktop`, and the cfg, removed last so an interrupted uninstall can be run again. On a terminal it lists the files and asks first; `-c` only lists them. A name without a cfg is reported and the run exits 1 *(Claude, directed by user)*
 - **lib/appimages.sh, lib/main.sh, lib/run.sh, README.md:** After a run that wrote or removed a desktop entry, `update-desktop-database ~/.local/share/applications` refreshes the desktop database once, through a new `mode_finish` hook (also called from the EXIT trap after a Ctrl+C). Without the command (desktop-file-utils) the run warns and goes on *(Claude, directed by user)*
+
+### Changed
+- **lib/appimages.sh:** `-u` with several AppImages lists all their files and asks once (`Uninstall 2 AppImages (bar, baz)? [y/N]`) instead of once per app *(Claude, directed by user)*
 
 ## [2026-11-11]
 
