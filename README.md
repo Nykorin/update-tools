@@ -11,7 +11,7 @@ Each item is described by a small JSON config file that says where its new versi
 > [!IMPORTANT]
 > **This project was written with AI.** Almost all of the code and documentation was written by AI assistants (Claude by Anthropic, and Grok by xAI), following the author's design, requests and review. The author tested it on their own Linux system, with their own AppImages, Archipelago worlds and Ventoy drive, but it has not been reviewed or tested by anyone else. Read the scripts before running them, try `-c` (check only) first, and keep backups of anything you point it at. It comes with no warranty. `CHANGELOG.md` and the git history credit each change to the user, Claude or Grok.
 
-On Windows, a PowerShell port of the worlds and ISO modes is in [`windows/`](windows/README.md).
+On Windows, a PowerShell port of the worlds and ISO modes is on the [`windows`](https://github.com/Nykorin/update-tools/tree/windows/windows) branch, in its `windows/` folder.
 
 ## Requirements
 
@@ -209,7 +209,6 @@ lib/appimages.sh    AppImage hooks: archives, desktop entries, icons
 lib/apworlds.sh     world hooks: zip checks, release zips with several worlds
 lib/isos.sh         ISO hooks: checksums, free space, "folder"
 lib/…               config files, network, progress display, files, flags
-windows/            the PowerShell port for worlds and ISOs
 ```
 
 `CHANGELOG.md` lists every change, and the git history follows the same format back to the first version.

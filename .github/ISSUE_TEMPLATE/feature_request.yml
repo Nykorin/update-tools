@@ -12,7 +12,7 @@ body:
         - ISOs
         - The menu
         - Writing a cfg (update-tools make)
-        - Windows port
+        - Windows port (the windows branch)
         - A new kind of item, or a new manager (where updates come from)
         - Something else
     validations:

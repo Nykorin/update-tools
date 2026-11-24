@@ -17,7 +17,7 @@ body:
         - ISOs (update-tools -m iso)
         - The menu (update-tools without -m)
         - Writing a cfg (update-tools make)
-        - Windows port (update-tools.ps1 / make-update-cfg.ps1)
+        - Windows port (the windows branch)
         - Something else
     validations:
       required: true
