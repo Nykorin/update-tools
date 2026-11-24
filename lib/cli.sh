@@ -25,6 +25,7 @@ usage() {
     fi
     cat <<EOF
 Usage: ${0##*/} [-m MODE] [OPTIONS]
+       ${0##*/} make -m MODE [OPTIONS] LINK [NAME]
 Check and update AppImages, Archipelago worlds and ISOs. Each item has a cfg
 (NAME.json) in its folder's .update-tools/db/; one whose item isn't there yet
 is installed.
@@ -43,6 +44,10 @@ Modes:
                     ISO's folder, and every download is checksum-verified
                     before it replaces anything
   all               all three in turn, skipping any that can't run
+
+make writes a new item's cfg from a link (a GitHub or GitLab project or release
+asset, or a fixed download); the next run installs the item. -m picks its kind,
+before or after make. ${0##*/} make -h shows its options.
 
 Settings ($(tilde "$SETTINGS_FILE")):
   app_dir=          $app
@@ -156,8 +161,8 @@ parse_flags() {
 }
 
 # MODE, the short name for either spelling of mode $1 (-m, here and in
-# make-update-cfg).
-# shellcheck disable=SC2034  # MODE is read by make-update-cfg
+# update-tools make).
+# shellcheck disable=SC2034  # MODE is read by make_cfg
 set_mode() {
     case "$1" in
         app|appimages) MODE=app ;;

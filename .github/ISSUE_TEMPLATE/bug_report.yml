@@ -16,7 +16,7 @@ body:
         - Archipelago worlds (update-tools -m apw)
         - ISOs (update-tools -m iso)
         - The menu (update-tools without -m)
-        - make-update-cfg
+        - Writing a cfg (update-tools make)
         - Windows port (update-tools.ps1 / make-update-cfg.ps1)
         - Something else
     validations:

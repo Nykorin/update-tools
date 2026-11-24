@@ -23,5 +23,7 @@ source "$LIB_DIR/managers.sh" || exit 1
 source "$LIB_DIR/run.sh" || exit 1
 # shellcheck source=lib/main.sh
 source "$LIB_DIR/main.sh" || exit 1
+# shellcheck source=lib/make.sh
+source "$LIB_DIR/make.sh" || exit 1
 # shellcheck source=lib/menu.sh
 source "$LIB_DIR/menu.sh" || exit 1

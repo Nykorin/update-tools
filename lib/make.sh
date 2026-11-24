@@ -1,19 +1,21 @@
-#!/usr/bin/env bash
-# make-update-cfg: writes a new item's cfg from a link, for update-tools to
-# install on its next run. Run without arguments for the help.
-set -uo pipefail
+# shellcheck shell=bash disable=SC2154,SC2034
+# make.sh: update-tools make, which writes a new item's cfg from a link, for
+# update-tools to install on its next run (it was the make-update-cfg command
+# until 2026-11-24). Loaded by load.sh. It reads (SC2154) and sets (SC2034)
+# variables that the shared libraries and the ISO module own.
+
+# clean_name's patterns need extglob when the function is read, not only when
+# it runs
 shopt -s extglob
 
-# the script's real folder, through any symlink, so lib/ is found next to it
-SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
-# shellcheck source=lib/load.sh
-source "$SCRIPT_DIR/lib/load.sh" || exit 1
+# the command as its messages name it
+MAKE_CMD="${0##*/} make"
 
-# replaces the updaters' help, which set_mode prints after a bad type
-usage() {
+# The help of update-tools make (make -h, or make without arguments).
+make_usage() {
     cat <<EOF
-Usage: ${0##*/} -m TYPE [OPTIONS] LINK [NAME]
-       ${0##*/} -m TYPE -u LINK [OPTIONS] [NAME]
+Usage: $MAKE_CMD -m TYPE [OPTIONS] LINK [NAME]
+       $MAKE_CMD -m TYPE -u LINK [OPTIONS] [NAME]
 Write a cfg for a new AppImage, Archipelago world or ISO, read from LINK. The
 next update-tools run installs it.
 
@@ -32,9 +34,9 @@ Options:
 EOF
 }
 
-die() { echo "${0##*/}: $*" >&2; exit 1; }
+make_die() { echo "$MAKE_CMD: $*" >&2; exit 1; }
 # a usage error: the message, then the help
-bad() { echo "${0##*/}: $*" >&2; usage >&2; exit 2; }
+make_bad() { echo "$MAKE_CMD: $*" >&2; make_usage >&2; exit 2; }
 
 # A cfg name from a file or repo name: no extension, arch or version, lowercase,
 # and _ for anything but letters, digits, - and _.
@@ -83,8 +85,8 @@ choose_asset() {
         [[ -n "$found" ]] && break
     done < <(asset_patterns)
     if [[ -z "$found" ]]; then
-        [[ "$prerelease" == true ]] && die "no release has a .$ITEM_EXT asset (or an archive) to install"
-        die "no stable release has a .$ITEM_EXT asset (or an archive) to install; -p takes pre-releases too"
+        [[ "$prerelease" == true ]] && make_die "no release has a .$ITEM_EXT asset (or an archive) to install"
+        make_die "no stable release has a .$ITEM_EXT asset (or an archive) to install; -p takes pre-releases too"
     fi
     IFS=$'\t' read -ra names <<<"$found"
     tag="${names[0]}"; names=("${names[@]:1}")
@@ -102,13 +104,13 @@ choose_asset() {
         [[ "${asset,,}" =~ (aarch64|arm64|armhf|armv7|(^|[-_.])(win(dows)?(32|64)?|mac(os)?|osx|darwin)([-_.]|$)) ]] || keep+=("$asset")
     done
     if (( ${#keep[@]} == 0 )); then
-        printf '%s: release %s has only builds for other systems:\n' "${0##*/}" "$tag" >&2
+        printf '%s: release %s has only builds for other systems:\n' "$MAKE_CMD" "$tag" >&2
         printf '  %s\n' "${names[@]}" >&2
         exit 1
     fi
     names=("${keep[@]}")
     if (( ${#names[@]} > 1 )); then
-        printf '%s: release %s has several assets; pass the link of the one you want:\n' "${0##*/}" "$tag" >&2
+        printf '%s: release %s has several assets; pass the link of the one you want:\n' "$MAKE_CMD" "$tag" >&2
         printf '  %s\n' "${names[@]}" >&2
         exit 1
     fi
@@ -157,7 +159,7 @@ asset_pattern() {
     fi
     # neither picks only this asset, so a later release could resolve to one
     # of the others (the updater takes the first match): write nothing
-    printf '%s: in release %s, no pattern matches only %s; it also matches:\n' "${0##*/}" "$tag" "$asset" >&2
+    printf '%s: in release %s, no pattern matches only %s; it also matches:\n' "$MAKE_CMD" "$tag" "$asset" >&2
     grep -E "^($re)\$" <<<"$names" | grep -vxF -- "$asset" | sed 's/^/  /' >&2
     printf 'Write the cfg by hand, with a "repo_regex" that matches only the file you want.\n' >&2
     exit 1
@@ -167,7 +169,7 @@ from_github() {
     local api_url
     repo="${link#*github.com/}"
     IFS=/ read -r owner project _ <<<"$repo"
-    [[ -n "$owner" && -n "$project" ]] || die "no owner/repo in $link"
+    [[ -n "$owner" && -n "$project" ]] || make_die "no owner/repo in $link"
     repo="$owner/${project%.git}"
     PROGRESS_LABEL="$repo"
     api_url="https://api.github.com/repos/${repo}/releases?per_page=100"
@@ -236,54 +238,58 @@ make_cfg() {
     while (( $# )); do
         case "$1" in
             -m|--mode)
-                [[ -n "${2:-}" ]] || bad "$1 needs a type"
+                [[ -n "${2:-}" ]] || make_bad "$1 needs a type"
                 type_arg="$2"; shift ;;
             --mode=*)
                 type_arg="${1#--mode=}"
-                [[ -n "$type_arg" ]] || bad "--mode needs a type" ;;
+                [[ -n "$type_arg" ]] || make_bad "--mode needs a type" ;;
             -u|--url)
-                [[ -n "${2:-}" ]] || bad "$1 needs a link"
+                [[ -n "${2:-}" ]] || make_bad "$1 needs a link"
                 link="$2"; shift ;;
             --url=*)
                 link="${1#--url=}"
-                [[ -n "$link" ]] || bad "--url needs a link" ;;
+                [[ -n "$link" ]] || make_bad "--url needs a link" ;;
             -l|--latest|-p|--prerelease)
                 given=false; [[ "$1" == -p || "$1" == --prerelease ]] && given=true
-                [[ -n "$prerelease" && "$prerelease" != "$given" ]] && bad "-l and -p can't be used together"
+                [[ -n "$prerelease" && "$prerelease" != "$given" ]] && make_bad "-l and -p can't be used together"
                 prerelease="$given" ;;
             -r|--root)
-                [[ -n "${2:-}" ]] || bad "$1 needs a folder"
+                [[ -n "${2:-}" ]] || make_bad "$1 needs a folder"
                 ROOT_ARG="$2"; shift ;;
             --root=*)
                 ROOT_ARG="${1#--root=}"
-                [[ -n "$ROOT_ARG" ]] || bad "--root needs a folder" ;;
+                [[ -n "$ROOT_ARG" ]] || make_bad "--root needs a folder" ;;
             -d|--debug) DEBUG=1 ;;
-            -h|--help)  usage | paint_text; exit 0 ;;
-            -*)         bad "unknown option '$1'" ;;
+            -h|--help)  make_usage | paint_text; exit 0 ;;
+            -*)         make_bad "unknown option '$1'" ;;
             *)          args+=("$1") ;;
         esac
         shift
     done
-    (( ${#args[@]} )) || [[ -n "$type_arg$link" ]] || { usage | paint_text; exit 0; }
-    [[ -n "$type_arg" ]] || bad "need -m TYPE"
+    (( ${#args[@]} )) || [[ -n "$type_arg$link" ]] || { make_usage | paint_text; exit 0; }
+    [[ -n "$type_arg" ]] || make_bad "need -m TYPE"
     if [[ -z "$link" ]]; then
-        (( ${#args[@]} )) || bad "need a LINK"
+        (( ${#args[@]} )) || make_bad "need a LINK"
         link="${args[0]}"; args=("${args[@]:1}")
     fi
-    (( ${#args[@]} <= 1 )) || bad "too many arguments: ${args[*]}"
+    (( ${#args[@]} <= 1 )) || make_bad "too many arguments: ${args[*]}"
     name_arg="${args[0]:-}"
-    set_mode "$type_arg"
+    # checked here, so a wrong type shows this help, not update-tools'
+    case "$type_arg" in
+        app|appimages|apw|apworlds|iso|isos) set_mode "$type_arg" ;;
+        *) make_bad "unknown type '$type_arg' (app, apw or iso)" ;;
+    esac
     prerelease="${prerelease:-false}"
     [[ "$link" == *://* ]] || link="https://$link"
 
     ITEM_TYPE="$MODE"
     item_settings
     dir="${ROOT_ARG:-$DEFAULT_DIR}"; dir="${dir%/}"
-    [[ -n "$dir" ]] || die "no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$SETTINGS_FILE"), or use -r DIR"
-    [[ -d "$dir" ]] || die "$dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}"
+    [[ -n "$dir" ]] || make_die "no folder set for $ITEM_TITLE: add $DIR_KEY=DIR to $(tilde "$SETTINGS_FILE"), or use -r DIR"
+    [[ -d "$dir" ]] || make_die "$dir not found.${NOT_FOUND_HINT:+ $NOT_FOUND_HINT}"
     CFG_DIR="$dir/.update-tools/db"
     require_cmds "$ITEM_TYPE"
-    command -v jq &>/dev/null || die "required command not found: jq"
+    command -v jq &>/dev/null || make_die "required command not found: jq"
     [[ "$ITEM_TYPE" == iso ]] && load_module
     GITHUB_HEADERS=$(mktemp)
     trap 'rm -f "$GITHUB_HEADERS"' EXIT
@@ -301,16 +307,16 @@ make_cfg() {
     [[ "$manager" != github && "$prerelease" == true ]] && say "⚠ -p only applies to GitHub releases, ignored"
 
     name="${name_arg:-$default_name}"
-    [[ -n "$name" && "$name" != */* ]] || die "can't make a cfg name from the link; pass NAME"
+    [[ -n "$name" && "$name" != */* ]] || make_die "can't make a cfg name from the link; pass NAME"
     cfg="$CFG_DIR/$name.json"
-    [[ -e "$cfg" ]] && die "${cfg/#"$HOME"/\~} already exists"
+    [[ -e "$cfg" ]] && make_die "${cfg/#"$HOME"/\~} already exists"
     PROGRESS_LABEL="$name"
 
     # what update-tools will find, with the cfg as written
     resolve_latest_asset || exit 1
     debug "resolves to ${latest_tag:-?}: $asset_name"
     if [[ -n "${asset:-}" && "$asset_name" != "$asset" ]]; then
-        die "the cfg would find $asset_name, not $asset; nothing written"
+        make_die "the cfg would find $asset_name, not $asset; nothing written"
     fi
 
     if [[ "$ITEM_TYPE" == iso ]]; then
@@ -348,11 +354,9 @@ make_cfg() {
     for pair in "${pairs[@]}"; do kv+=("${pair%%=*}" "${pair#*=}"); done
     jq -n --indent 2 --arg link "$link" '($ARGS.positional) as $a
         | {comment: $link} + ([range(0; $a | length; 2) as $i | {($a[$i]): $a[$i + 1]}] | add)' \
-        --args "${kv[@]}" > "$cfg" || die "could not write ${cfg/#"$HOME"/\~}"
+        --args "${kv[@]}" > "$cfg" || make_die "could not write ${cfg/#"$HOME"/\~}"
     say "✓ wrote ${cfg/#"$HOME"/\~} (${tag:+$tag: }$asset_name):"
     sed 's/^/    /' "$cfg"
     [[ "$ITEM_TYPE" == iso ]] && say "  \"folder\": \"$folder\" is a guess: set it to the ISO's folder under ${dir/#"$HOME"/\~}"
     say "  $ITEM_CMD -c shows the install; a run without -c does it"
 }
-
-make_cfg "$@"

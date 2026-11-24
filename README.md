@@ -29,12 +29,10 @@ Each command checks for what it needs and says what's missing.
 ```sh
 git clone https://github.com/Nykorin/update-tools.git
 mkdir -p ~/.local/bin
-for c in update-tools make-update-cfg; do
-    ln -s "$PWD/update-tools/$c" ~/.local/bin/"$c"
-done
+ln -s "$PWD/update-tools/update-tools" ~/.local/bin/update-tools
 ```
 
-Both commands find their `lib/` folder through the symlink, so they can be linked from anywhere on your `PATH`.
+The command finds its `lib/` folder through the symlink, so it can be linked from anywhere on your `PATH`.
 
 ### Settings
 
@@ -91,15 +89,15 @@ Every run also writes a session log, `~/.cache/update-tools/session-DATE_TIME.lo
 
 ## Adding an item
 
-### With make-update-cfg
+### With update-tools make
 
 ```sh
-make-update-cfg -m app https://github.com/TwilitRealm/dusklight
-make-update-cfg -m apw -p https://github.com/OrcThrowman/7-Days-to-Die-AP
-make-update-cfg -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
+update-tools make -m app https://github.com/TwilitRealm/dusklight
+update-tools -m apw make -p https://github.com/OrcThrowman/7-Days-to-Die-AP
+update-tools make -m iso -u https://geo.mirror.pkgbuild.com/iso/latest/archlinux-x86_64.iso archlinux
 ```
 
-`-m` is `app`, `apw` or `iso`; the link comes next or after `-u`, then an optional name for the cfg. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next `update-tools` run for that kind installs the item.
+`-m` is `app`, `apw` or `iso`, before or after `make` (so are `-r` and `-d`); the link comes next or after `-u` (here `-u` is the link, not uninstall), then an optional name for the cfg. `update-tools make -h` shows its options. It reads the link, writes the cfg, and checks it with the same lookup the updaters use before saving it. The next `update-tools` run for that kind installs the item.
 
 - **GitHub or GitLab projects:** it takes the latest stable release with something installable (`-l`, the default), or with `-p` the newest release, pre-releases included; the cfg then keeps to that choice (`"allow_prereleases": "false"` or `"true"`). It ignores builds for other systems and architectures, and turns the file name into a pattern that matches later versions. If several files are left, it lists them; pass the link of the one you want instead.
 - **Any other link:** it becomes a fixed download.
@@ -120,7 +118,7 @@ Each mode's folder holds the scripts' own hidden folder (hidden, so Archipelago 
 └── tmp/     staged downloads, and the old version during an install (for ISOs, only then)
 ```
 
-Each item has a cfg in its mode's folder, as `.update-tools/db/NAME.json`: a JSON object whose values are text. The scripts read only the keys below (any other is reported and ignored), and keep what they write themselves under `"state"`. JSON has no comments, so a cfg can hold a `"comment"`, which the scripts ignore; `make-update-cfg` puts the link there.
+Each item has a cfg in its mode's folder, as `.update-tools/db/NAME.json`: a JSON object whose values are text. The scripts read only the keys below (any other is reported and ignored), and keep what they write themselves under `"state"`. JSON has no comments, so a cfg can hold a `"comment"`, which the scripts ignore; `update-tools make` puts the link there.
 
 ```jsonc
 // ~/AppImages/.update-tools/db/dusklight.json
@@ -203,10 +201,10 @@ Put a token (no scopes needed) in `$GITHUB_TOKEN`, or on the first line of `~/.c
 
 ```
 update-tools        updates AppImages, worlds and ISOs (-m, or the menu)
-make-update-cfg     writes a new item's cfg from a link
 lib/load.sh         loads the shared libraries
 lib/main.sh         the command, the mode loop and the one process_item every mode shares
 lib/menu.sh         the fzf menu
+lib/make.sh         update-tools make: a new item's cfg from a link
 lib/managers.sh     github, gitlab, static, jsonfeed, dirlist, dateprobe
 lib/appimages.sh    AppImage hooks: archives, desktop entries, icons
 lib/apworlds.sh     world hooks: zip checks, release zips with several worlds

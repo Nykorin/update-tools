@@ -11,7 +11,7 @@ body:
         - Archipelago worlds
         - ISOs
         - The menu
-        - make-update-cfg
+        - Writing a cfg (update-tools make)
         - Windows port
         - A new kind of item, or a new manager (where updates come from)
         - Something else
@@ -23,7 +23,7 @@ body:
     attributes:
       label: What would you like it to do?
       placeholder: |
-        Let make-update-cfg write a dirlist cfg from a mirror's folder link.
+        Let update-tools make write a dirlist cfg from a mirror's folder link.
     validations:
       required: true
 

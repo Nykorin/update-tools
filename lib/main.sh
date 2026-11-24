@@ -461,10 +461,26 @@ start_log() {
 
 # The command, update-tools: -m picks the mode (all for all three); without it,
 # the menu on a terminal with fzf (menu.sh), else all three. Exits 1 if a mode
-# couldn't run.
+# couldn't run. update-tools make … writes a cfg instead (make.sh).
 # shellcheck disable=SC2034  # force, check_only, NOW and checked_at are read by the modes
 update_tools() {
+    local i arg
     force=false check_only=false
+    # make (update-tools make …): writing a cfg, not updating. It may follow
+    # -m, -r or -d (update-tools -m apw make LINK), which make takes too.
+    for (( i = 1; i <= $#; i++ )); do
+        arg="${!i}"
+        case "$arg" in
+            -m|--mode|-r|--root) (( i++ )) ;;
+            --mode=*|--root=*|-d|--debug) ;;
+            make)
+                printf -v NOW '%(%s)T' -1
+                start_log "$@"
+                make_cfg "${@:1:i-1}" "${@:i+1}"
+                exit ;;
+            *) break ;;
+        esac
+    done
     parse_flags "$@"
     # one time for the whole run: what last_checked saves, and what it's compared with
     printf -v NOW '%(%s)T' -1
